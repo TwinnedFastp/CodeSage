@@ -109,6 +109,48 @@ async def delete_session(db: AsyncSession, user_id: int, session_id: UUID) -> No
         raise ConversationError("删除会话失败", status=500)
 
 
+async def generate_title(db: AsyncSession, user_id: int, session_id: UUID) -> ChatSession:
+    """
+    根据会话前几条消息调用 LLM 生成简短标题，并更新到数据库。
+    """
+    from openai import AsyncOpenAI
+    from backend.core.config import settings
+
+    msgs = await list_messages(db, user_id, session_id, limit=4, offset=0)
+    if len(msgs) < 2:
+        raise ConversationError("消息不足，无法生成标题", status=400)
+
+    conversation_text = "\n".join(
+        f"{'用户' if m.role == 'user' else 'AI'}：{m.content[:200]}"
+        for m in msgs[:4]
+    )
+
+    try:
+        ai_client = AsyncOpenAI(
+            api_key=settings.lightrag_api_key,
+            base_url=settings.lightrag_base_url,
+        )
+        response = await ai_client.chat.completions.create(
+            model=settings.LLM_MODEL,
+            messages=[
+                {"role": "system", "content": (
+                    "你是一个会话标题生成器。根据用户与AI的对话内容，生成一个简洁、有概括性的中文标题。"
+                    "要求：1）不超过15个汉字 2）不要加标点符号 3）直接输出标题，不要解释或引号包裹"
+                )},
+                {"role": "user", "content": f"请为以下对话生成一个简短标题：\n\n{conversation_text}"},
+            ],
+            max_tokens=30,
+            temperature=0.3,
+        )
+        raw_title = (response.choices[0].message.content or "").strip().strip('"\'`').strip()
+        title = raw_title[:20] if raw_title else "新会话"
+    except Exception as exc:
+        logger.exception("LLM 生成标题失败 session_id=%s", session_id)
+        raise ConversationError(f"生成标题失败：{exc}", status=500)
+
+    return await update_session(db, user_id, session_id, title=title)
+
+
 # ==================================================================
 # 原始聊天记录
 # ==================================================================

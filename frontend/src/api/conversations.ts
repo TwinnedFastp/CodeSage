@@ -26,6 +26,12 @@ export async function deleteSession(id: string): Promise<void> {
   await request.delete(`/conversations/sessions/${id}`)
 }
 
+// AI 自动生成会话标题
+export async function generateSessionTitle(id: string): Promise<ChatSession> {
+  const { data } = await request.post(`/conversations/sessions/${id}/generate-title`)
+  return data
+}
+
 // ---- 消息 ----
 export async function listMessages(sessionId: string, limit = 100, offset = 0): Promise<ChatMessage[]> {
   const { data } = await request.get(`/conversations/sessions/${sessionId}/messages`, {

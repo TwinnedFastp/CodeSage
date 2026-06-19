@@ -84,6 +84,20 @@ async def delete_session(
         return _err(exc)
 
 
+@router.post("/sessions/{session_id}/generate-title", response_model=SessionOut)
+async def generate_session_title(
+    session_id: UUID,
+    db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user),
+):
+    """根据 AI 对话内容自动生成会话标题。"""
+    try:
+        return await conversation_service.generate_title(db, user.id, session_id)
+    except conversation_service.ConversationError as exc:
+        return _err(exc)
+    except Exception as exc:
+        return JSONResponse(status_code=500, content={"message": f"生成标题失败：{str(exc)}"})
+
+
 # ------------------------------------------------------------------
 # 原始聊天记录
 # ------------------------------------------------------------------
