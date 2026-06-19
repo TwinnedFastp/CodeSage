@@ -28,3 +28,5 @@ Thumbs.db
 # Database
 *.sqlite3
 pgdata/
+data/
+docker_data/
