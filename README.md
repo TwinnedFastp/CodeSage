@@ -27,10 +27,73 @@ docker-compose up --build
 #### 后端
 
 ```bash
-cd backend
 pip install -r requirements.txt
-uvicorn main:app --reload
+uvicorn backend.main:app --reload
 ```
+
+## LightRAG + 阿里百炼
+
+本项目已把 LightRAG 嵌入到后端，默认使用阿里云百炼 OpenAI 兼容接口。
+
+### 1. 配置模型
+
+复制 `.env.example` 为 `.env`，然后至少填写一个 API Key：
+
+```bash
+DASHSCOPE_API_KEY=你的百炼APIKey
+```
+
+默认配置如下：
+
+```bash
+LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+LLM_MODEL=qwen-plus
+EMBEDDING_MODEL=text-embedding-v4
+EMBEDDING_DIM=1024
+```
+
+### 2. 写入知识库
+
+```bash
+curl -X POST http://localhost:8000/api/v1/rag/documents \
+  -H "Content-Type: application/json" \
+  -d "{\"source\":\"学习笔记\",\"text\":\"CodeSage 是一个集成 LightRAG 的 AI 学习项目。\"}"
+```
+
+### 3. 查询知识库
+
+```bash
+curl -X POST http://localhost:8000/api/v1/rag/query \
+  -H "Content-Type: application/json" \
+  -d "{\"question\":\"CodeSage 是什么？\",\"mode\":\"hybrid\"}"
+```
+
+聊天流式接口也支持 LightRAG：
+
+```bash
+curl -X POST http://localhost:8000/api/v1/chat/chatstreaming \
+  -H "Content-Type: application/json" \
+  -d "{\"message\":\"CodeSage 是什么？\",\"use_rag\":true,\"mode\":\"hybrid\"}"
+```
+
+### 4. 使用 LiteLLM 统一管理更多模型
+
+如果你想“一键配置各种大模型”，可以使用已加入依赖的 LiteLLM Proxy。
+
+```bash
+pip install -r backend/requirements.txt
+litellm --config backend/litellm_config.example.yaml --port 4000
+```
+
+然后把 `.env` 改成：
+
+```bash
+LLM_BASE_URL=http://localhost:4000/v1
+LLM_API_KEY=sk-anything
+LLM_MODEL=qwen-plus
+```
+
+之后要切换模型，只需要把 `LLM_MODEL` 改成 `deepseek-chat`、`gpt-4o-mini` 等在 `backend/litellm_config.example.yaml` 里配置过的名字。
 
 #### 前端
 

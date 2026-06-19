@@ -29,10 +29,12 @@ RUN pip3 install --no-cache-dir --upgrade pip -i https://mirrors.aliyun.com/pypi
     pip3 install --no-cache-dir -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/
 
 # 5. 复制项目源代码到镜像中
-COPY . .
+# 注意：代码里使用了 from backend.xxx import ... 这种包路径，
+# 所以镜像内也要保留 /app/backend 这一层目录。
+COPY . ./backend
 
 # 6. 暴露容器内部的 8000 端口
 EXPOSE 8000
 
 # 7. 启动 FastAPI 服务
-CMD ["python3", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python3", "-m", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]

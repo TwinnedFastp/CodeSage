@@ -41,11 +41,11 @@ services:
       - LIGHTRAG_WORKING_DIR=${LIGHTRAG_WORKING_DIR:-data/lightrag}
     volumes:
       # --- 开发环境代码挂载 (实现修改代码后容器内自动热重载) ---
-      - ./backend:/app
+      - ./backend:/app/backend
       # --- LightRAG 本地索引和图谱数据 ---
       - ./docker_data/lightrag:/app/data/lightrag
     # 覆盖 Dockerfile 中的 CMD，增加 --reload 模式方便开发
-    command: python3 -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    command: python3 -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
     depends_on:
       - db
     ports:

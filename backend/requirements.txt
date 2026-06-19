@@ -6,6 +6,10 @@ python-dotenv
 pydantic-settings
 pydantic[email]
 python-multipart
-jose[cryptography]
+python-jose[cryptography]
 passlib[bcrypt]
 httpx
+lightrag-hku
+litellm[proxy]
+numpy
+openai
