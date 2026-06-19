@@ -5,6 +5,7 @@ import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules, FormItemRule } from 'element-plus'
 import { ChatDotRound, ArrowRight, Check } from '@element-plus/icons-vue'
 import { register } from '@/api/auth'
+import PuzzleVerify from '@/components/PuzzleVerify.vue'
 
 const router = useRouter()
 
@@ -53,20 +54,35 @@ const strength = computed(() => {
   return score
 })
 const strengthLabel = computed(() => ['极弱', '弱', '一般', '良好', '强'][strength.value - 1] || '')
-const strengthColor = computed(() => ['#D1CFCA', '#E8C7C7', '#E8E0C7', '#C7D8E8', '#111111'][strength.value] || '#D1CFCA')
+const strengthColor = computed(() => ['#D9483F', '#E8854A', '#F0C042', '#6BAF6B', '#3A8A5E'][strength.value - 1] || '#E8E6E1')
 
 const submitting = ref(false)
 const registeredEmail = ref('')
+const devVerifyLink = ref('')
+const captchaVerified = ref(false)
+
+function onCaptchaVerified(val: boolean) {
+  captchaVerified.value = val
+}
 
 async function onSubmit() {
   if (!formRef.value) return
   const valid = await formRef.value.validate().catch(() => false)
   if (!valid) return
+  if (!captchaVerified.value) {
+    ElMessage.warning('请先完成拼图验证')
+    return
+  }
 
   submitting.value = true
   try {
     const resp = await register({ email: form.email.trim(), password: form.password })
     registeredEmail.value = form.email.trim()
+    // 开发模式下后端会在 detail 中回传验证链接
+    if (resp.detail) {
+      const match = resp.detail.match(/(http[^)]+verify-email\?token=[^"]+)/)
+      if (match) devVerifyLink.value = match[1]
+    }
     ElMessage.success(resp.message || '注册成功')
   } catch (err: any) {
     const msg = err.response?.data?.message || '注册失败，请稍后重试'
@@ -78,6 +94,15 @@ async function onSubmit() {
 
 function goLogin() {
   router.push('/login')
+}
+
+function handleVerifyClick(e: MouseEvent) {
+  // 链接是 hash 模式的前端路由，阻止默认行为用 router 导航
+  if (devVerifyLink.value.includes('verify-email')) {
+    e.preventDefault()
+    const url = new URL(devVerifyLink.value)
+    router.replace({ path: '/verify-email', query: { token: url.searchParams.get('token') || '' } })
+  }
 }
 </script>
 
@@ -119,9 +144,24 @@ function goLogin() {
             <el-icon :size="28"><Check /></el-icon>
           </div>
           <h2 class="font-serif text-3xl text-[#111111] mb-3">注册成功</h2>
-          <p class="text-[14px] text-[#555555] leading-relaxed mb-8 max-w-sm mx-auto">
+          <p class="text-[14px] text-[#555555] leading-relaxed mb-6 max-w-sm mx-auto">
             验证邮件已发送至 <span class="font-semibold text-[#111111]">{{ registeredEmail }}</span>，请在 24 小时内完成邮箱验证后登录。
           </p>
+
+          <!-- 开发模式：展示验证链接（无需 SMTP） -->
+          <div v-if="devVerifyLink" class="mb-8 p-4 rounded-xl bg-[#F3F2EE] text-left">
+            <p class="text-[12px] font-medium text-[#999999] uppercase tracking-widest mb-2">开发模式验证链接</p>
+            <a
+              :href="devVerifyLink"
+              target="_blank"
+              class="block text-[13px] text-[#111111] break-all hover:underline leading-relaxed"
+              @click="handleVerifyClick"
+            >
+              {{ devVerifyLink }}
+            </a>
+            <p class="text-[11px] text-[#999999] mt-2">点击链接完成验证，或复制到浏览器地址栏打开</p>
+          </div>
+
           <button
             type="button"
             class="w-full h-12 bg-[#111111] hover:bg-[#333333] text-white rounded-full flex items-center justify-center gap-2 transition-all duration-300 shadow-sm font-medium text-[14px]"
@@ -172,14 +212,14 @@ function goLogin() {
                 autocomplete="new-password"
               />
               <!-- 密码强度条 -->
-              <div v-if="form.password" class="w-full flex items-center gap-2 mt-2">
-                <div class="flex-1 h-1 rounded-full bg-[#E8E6E1] overflow-hidden">
+              <div v-if="form.password" class="w-full flex items-center gap-3 mt-2">
+                <div class="flex-1 h-[5px] rounded-full bg-[#E8E6E1] overflow-hidden">
                   <div
-                    class="h-full transition-all duration-300"
+                    class="h-full transition-all duration-300 ease-out"
                     :style="{ width: `${(strength / 5) * 100}%`, background: strengthColor }"
                   ></div>
                 </div>
-                <span class="text-[11px] text-[#777777] w-8">{{ strengthLabel }}</span>
+                <span class="text-[11px] font-medium w-8 shrink-0" :style="{ color: strengthColor }">{{ strengthLabel }}</span>
               </div>
             </el-form-item>
 
@@ -193,6 +233,11 @@ function goLogin() {
                 autocomplete="new-password"
                 @keyup.enter="onSubmit"
               />
+            </el-form-item>
+
+            <!-- 拼图人机验证 -->
+            <el-form-item class="captcha-item">
+              <PuzzleVerify @verified="onCaptchaVerified" />
             </el-form-item>
 
             <button
@@ -228,5 +273,11 @@ function goLogin() {
   border-radius: 14px !important;
   padding: 4px 16px;
   background: #ffffff;
+}
+.captcha-item {
+  margin-bottom: 4px;
+}
+:deep(.captcha-item .el-form-item__content) {
+  line-height: normal;
 }
 </style>

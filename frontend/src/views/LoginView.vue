@@ -5,6 +5,7 @@ import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ChatDotRound, ArrowRight } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
+import PuzzleVerify from '@/components/PuzzleVerify.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -27,11 +28,20 @@ const rules: FormRules = {
 }
 
 const submitting = ref(false)
+const captchaVerified = ref(false)
+
+function onCaptchaVerified(val: boolean) {
+  captchaVerified.value = val
+}
 
 async function onSubmit() {
   if (!formRef.value) return
   const valid = await formRef.value.validate().catch(() => false)
   if (!valid) return
+  if (!captchaVerified.value) {
+    ElMessage.warning('请先完成拼图验证')
+    return
+  }
 
   submitting.value = true
   try {
@@ -122,6 +132,11 @@ async function onSubmit() {
             />
           </el-form-item>
 
+          <!-- 拼图人机验证 -->
+          <el-form-item class="captcha-item">
+            <PuzzleVerify @verified="onCaptchaVerified" />
+          </el-form-item>
+
           <button
             type="button"
             :disabled="submitting"
@@ -154,5 +169,11 @@ async function onSubmit() {
   border-radius: 14px !important;
   padding: 4px 16px;
   background: #ffffff;
+}
+.captcha-item {
+  margin-bottom: 4px;
+}
+:deep(.captcha-item .el-form-item__content) {
+  line-height: normal;
 }
 </style>

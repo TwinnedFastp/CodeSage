@@ -54,6 +54,8 @@ class Settings(BaseSettings):
     LOGIN_MAX_FAIL_ATTEMPTS: int = 5
     LOGIN_LOCK_MINUTES: int = 15
     EMAIL_VERIFY_EXPIRE_HOURS: int = 24
+    # 开发模式：设为 true 时跳过邮箱验证检查，方便本地联调（生产环境务必 false）
+    SKIP_EMAIL_VERIFICATION: bool = False
 
     # LightRAG 配置
     # LIGHTRAG_WORKING_DIR 用来存放 LightRAG 生成的索引、图谱和缓存文件。

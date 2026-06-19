@@ -220,8 +220,8 @@ async def login(email: str, password: str, client_ip: Optional[str], db: AsyncSe
                 status=401,
             )
 
-    # 密码正确，但邮箱未验证
-    if not user.email_verified:
+    # 密码正确，但邮箱未验证（开发模式可通过 SKIP_EMAIL_VERIFICATION 绕过）
+    if not user.email_verified and not settings.SKIP_EMAIL_VERIFICATION:
         await _log_login(False, "email_not_verified")
         raise AuthError("邮箱尚未验证，请先完成验证", code="email_not_verified", status=403)
 
