@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  # 数据库服务
+  db:
+    image: postgres:15-alpine
+    container_name: codesage-db
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-chatgpt_clone}
+    volumes:
+      # --- Windows 开发环境测试路径 (相对路径) ---
+      - ./data/postgres:/var/lib/postgresql/data
+      
+      # --- Linux 生产环境路径 (如果需要请切换到下面这行) ---
+      # - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  # 后端服务 (FastAPI)
+  backend:
+    build: ./backend
+    container_name: codesage-backend
+    restart: always
+    environment:
+      - POSTGRES_SERVER=db
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=${POSTGRES_DB:-chatgpt_clone}
+    volumes:
+      # --- 开发环境代码挂载 (实现修改代码后容器内自动热重载) ---
+      - ./backend:/app
+    # 覆盖 Dockerfile 中的 CMD，增加 --reload 模式方便开发
+    command: python3 -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    depends_on:
+      - db
+    ports:
+      - "8000:8000"
+
+  # 前端服务 (Vue 3 + Nginx)
+  frontend:
+    build: ./frontend
+    container_name: codesage-frontend
+    restart: always
+    # volumes:
+    #   # --- 如果您想在容器外直接看到构建后的文件，可以取消下面注释 ---
+    #   - ./frontend/dist:/usr/share/nginx/html
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+# 命名卷定义
+volumes:
+  pgdata:
