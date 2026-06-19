@@ -1,8 +1,27 @@
 @import "tailwindcss";
 
+/* =========================================================
+   CodeSage 设计 Token —— 极简杂志风
+   色板：暖米白底 + 墨黑文字 + 米色侧栏 + 暖灰中性色
+   字体：Inter（正文）+ DM Serif Display（衬线点缀标题）
+   ========================================================= */
 @theme {
+  /* 字体族 */
   --font-sans: "Inter", system-ui, sans-serif;
   --font-serif: "DM Serif Display", Georgia, serif;
+
+  /* 核心色板（与原 App.vue 完全一致） */
+  --color-canvas: #FAFAFA;       /* 主画布底色 */
+  --color-surface: #F3F2EE;      /* 侧栏/次级面板 */
+  --color-surface-soft: #EAE8E0; /* 用户气泡/高亮区 */
+  --color-border: #E8E6E1;       /* 边框/分隔线 */
+  --color-border-strong: #D1CFCA;/* 边框 hover/占位 */
+  --color-ink: #111111;          /* 主文字/主按钮 */
+  --color-ink-soft: #333333;     /* 主按钮 hover */
+  --color-muted: #555555;        /* 次级文字 */
+  --color-subtle: #777777;       /* 辅助文字 */
+  --color-faint: #999999;        /* 占位/提示 */
+  --color-faintest: #AAAAAA;     /* placeholder */
 }
 
 :root {
@@ -11,8 +30,8 @@
   font-weight: 400;
 
   color-scheme: light;
-  color: #111111;
-  background-color: #FAFAFA;
+  color: var(--color-ink);
+  background-color: var(--color-canvas);
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -25,4 +44,79 @@ body {
   display: flex;
   min-width: 320px;
   min-height: 100vh;
+}
+
+/* =========================================================
+   全局细滚动条 —— 贯穿全站
+   ========================================================= */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--color-border-strong);
+}
+
+/* =========================================================
+   通用动画
+   ========================================================= */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-fade-in-up {
+  animation: fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.animate-fade-in {
+  animation: fadeIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+.animate-pulse-cursor {
+  animation: pulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* =========================================================
+   Element Plus 主题微调：让表单/按钮贴合极简杂志风
+   ========================================================= */
+.el-button--primary {
+  --el-button-bg-color: var(--color-ink);
+  --el-button-border-color: var(--color-ink);
+  --el-button-hover-bg-color: var(--color-ink-soft);
+  --el-button-hover-border-color: var(--color-ink-soft);
+  --el-button-active-bg-color: var(--color-ink);
+  --el-button-active-border-color: var(--color-ink);
+}
+
+.el-input__wrapper {
+  border-radius: 12px !important;
+  box-shadow: 0 0 0 1px var(--color-border) inset !important;
+  transition: box-shadow 0.2s ease;
+}
+.el-input__wrapper.is-focus {
+  box-shadow: 0 0 0 1px var(--color-ink) inset !important;
+}
+.el-input__inner {
+  font-family: var(--font-sans) !important;
 }
