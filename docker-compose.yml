@@ -29,9 +29,21 @@ services:
       - POSTGRES_USER=${POSTGRES_USER:-postgres}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
       - POSTGRES_DB=${POSTGRES_DB:-chatgpt_clone}
+      - LLM_API_KEY=${LLM_API_KEY:-}
+      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY:-}
+      - LLM_BASE_URL=${LLM_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
+      - LLM_MODEL=${LLM_MODEL:-qwen-plus}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-v4}
+      - EMBEDDING_DIM=${EMBEDDING_DIM:-1024}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
+      - LIGHTRAG_ENABLED=${LIGHTRAG_ENABLED:-true}
+      - LIGHTRAG_WORKING_DIR=${LIGHTRAG_WORKING_DIR:-data/lightrag}
     volumes:
       # --- 开发环境代码挂载 (实现修改代码后容器内自动热重载) ---
       - ./backend:/app
+      # --- LightRAG 本地索引和图谱数据 ---
+      - ./docker_data/lightrag:/app/data/lightrag
     # 覆盖 Dockerfile 中的 CMD，增加 --reload 模式方便开发
     command: python3 -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
     depends_on:
