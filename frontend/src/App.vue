@@ -11,7 +11,6 @@ import {
   Expand,
   Promotion
 } from '@element-plus/icons-vue'
-import axios from 'axios'
 
 // 状态定义
 const isMobile = ref(false)
@@ -28,7 +27,7 @@ interface Message {
 }
 
 const messages = ref<Message[]>([
-  { id: 1, role: 'assistant', content: '你好！我是你的 AI 助手，有什么我可以帮你的吗？' }
+  { id: 1, role: 'assistant', content: '你好。我是 CodeSage，你的代码工程师。有什么我可以帮你的吗？' }
 ])
 
 const chatHistory = ref([
@@ -55,6 +54,13 @@ const scrollToBottom = async () => {
   }
 }
 
+// 自动调整文本框高度
+const adjustTextareaHeight = (e: Event) => {
+  const target = e.target as HTMLTextAreaElement;
+  target.style.height = 'auto';
+  target.style.height = Math.min(target.scrollHeight, 200) + 'px';
+}
+
 // 发送消息
 const sendMessage = async () => {
   if (!userInput.value.trim() || isTyping.value) return
@@ -68,6 +74,10 @@ const sendMessage = async () => {
   
   userInput.value = ''
   isTyping.value = true
+  // Reset textarea height
+  const textarea = document.querySelector('textarea')
+  if (textarea) textarea.style.height = 'auto'
+  
   await scrollToBottom()
 
   // 添加一个空的助手消息，准备流式填充
@@ -121,7 +131,7 @@ const sendMessage = async () => {
     console.error('发送请求失败', error)
     const msgIndex = messages.value.findIndex(m => m.id === assistantMsgId)
     if (msgIndex !== -1) {
-      messages.value[msgIndex].content = '抱歉，发生了错误，请稍后再试。'
+      messages.value[msgIndex].content = '抱歉，连接到 CodeSage 服务器时发生了错误。请确保后端服务正在运行。'
     }
   } finally {
     isTyping.value = false
@@ -130,58 +140,61 @@ const sendMessage = async () => {
 </script>
 
 <template>
-  <div class="flex h-screen w-screen bg-[#f9fbff] text-[#2c3e50] overflow-hidden font-sans">
+  <!-- 整体采用极致的极简/杂志风格，去除多余的边框和强烈的色块 -->
+  <div class="flex h-screen w-screen bg-[#FAFAFA] text-[#111111] overflow-hidden antialiased font-sans selection:bg-[#EAE8E0]">
     
     <!-- 桌面端侧边栏 -->
     <aside 
       v-if="!isMobile"
       :class="[
-        'bg-[#ffffff] border-r border-[#eef2f7] transition-all duration-300 flex flex-col shadow-sm',
-        isSidebarCollapse ? 'w-20' : 'w-72'
+        'bg-[#F3F2EE] transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] flex flex-col',
+        isSidebarCollapse ? 'w-[80px]' : 'w-[280px]'
       ]"
     >
-      <div class="p-4 flex items-center justify-between">
-        <div v-if="!isSidebarCollapse" class="flex items-center gap-2 font-bold text-xl text-[#409eff]">
-          <el-icon :size="24"><ChatDotRound /></el-icon>
+      <div class="p-6 flex items-center justify-between h-20">
+        <div v-if="!isSidebarCollapse" class="flex items-center gap-3 font-semibold text-lg tracking-tight">
+          <div class="w-6 h-6 bg-[#111111] rounded-full flex items-center justify-center text-[#F3F2EE]">
+            <el-icon :size="14"><ChatDotRound /></el-icon>
+          </div>
           <span>CodeSage</span>
         </div>
-        <el-button 
-          link 
+        <button 
           @click="isSidebarCollapse = !isSidebarCollapse"
-          class="hover:bg-[#f0f4f8] p-2 rounded-lg"
+          class="p-2 rounded-full hover:bg-[#E8E6E1] transition-colors text-[#555555] mx-auto"
         >
-          <el-icon :size="20"><component :is="isSidebarCollapse ? Expand : Fold" /></el-icon>
-        </el-button>
+          <el-icon :size="18"><component :is="isSidebarCollapse ? Expand : Fold" /></el-icon>
+        </button>
       </div>
 
-      <div class="px-4 mb-4">
-        <el-button 
-          type="primary" 
-          class="w-full !rounded-xl !h-12 shadow-md hover:shadow-lg transition-all"
-          :icon="Plus"
-          @click="messages = [{ id: Date.now(), role: 'assistant', content: '开启新的对话...' }]"
+      <div class="px-5 mb-6 mt-2">
+        <button 
+          class="w-full h-11 bg-[#111111] hover:bg-[#333333] text-white rounded-full flex items-center justify-center gap-2 transition-all duration-300 shadow-sm"
+          @click="messages = [{ id: Date.now(), role: 'assistant', content: '你好。我是 CodeSage，你的代码工程师。有什么我可以帮你的吗？' }]"
         >
-          {{ isSidebarCollapse ? '' : '开启新对话' }}
-        </el-button>
+          <el-icon><Plus /></el-icon>
+          <span v-if="!isSidebarCollapse" class="text-sm font-medium">New Conversation</span>
+        </button>
       </div>
 
-      <nav class="flex-1 overflow-y-auto px-2 space-y-1">
+      <nav class="flex-1 overflow-y-auto px-3 py-2 space-y-1 custom-scrollbar">
         <div 
           v-for="chat in chatHistory" 
           :key="chat.id"
-          class="flex items-center gap-3 p-3 rounded-xl cursor-pointer hover:bg-[#f0f4f8] transition-colors group"
+          class="flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer hover:bg-[#E8E6E1] transition-colors group"
         >
-          <el-icon class="text-gray-400 group-hover:text-[#409eff]"><ChatDotRound /></el-icon>
-          <span v-if="!isSidebarCollapse" class="truncate text-sm font-medium">{{ chat.title }}</span>
+          <div class="w-1.5 h-1.5 rounded-full bg-[#D1CFCA] group-hover:bg-[#111111] transition-colors"></div>
+          <span v-if="!isSidebarCollapse" class="truncate text-[13px] font-medium text-[#444444] group-hover:text-[#111111]">{{ chat.title }}</span>
         </div>
       </nav>
 
-      <div class="p-4 border-t border-[#eef2f7] space-y-2">
-        <div class="flex items-center gap-3 p-2 rounded-lg hover:bg-[#f0f4f8] cursor-pointer">
-          <el-avatar :size="32" src="https://cube.elemecdn.com/0/88/03b0d39583f48206768a7534e55bcpng.png" />
+      <div class="p-5 border-t border-[#E8E6E1]/50">
+        <div class="flex items-center gap-3 cursor-pointer group">
+          <div class="w-9 h-9 rounded-full bg-[#E8E6E1] flex items-center justify-center text-[#555555] group-hover:bg-[#111111] group-hover:text-white transition-colors">
+            <el-icon><User /></el-icon>
+          </div>
           <div v-if="!isSidebarCollapse" class="flex flex-col">
-            <span class="text-sm font-semibold">User Admin</span>
-            <span class="text-xs text-gray-400">Pro Plan</span>
+            <span class="text-[13px] font-semibold">User Admin</span>
+            <span class="text-[11px] text-[#777777]">Pro Plan</span>
           </div>
         </div>
       </div>
@@ -193,165 +206,160 @@ const sendMessage = async () => {
       direction="ltr"
       size="280px"
       :with-header="false"
-      class="mobile-drawer"
+      class="!bg-[#F3F2EE]"
     >
-      <div class="flex flex-col h-full bg-white p-4">
-        <div class="flex items-center gap-2 font-bold text-xl text-[#409eff] mb-6">
-          <el-icon :size="24"><ChatDotRound /></el-icon>
+      <div class="flex flex-col h-full p-6">
+        <div class="flex items-center gap-3 font-semibold text-lg tracking-tight mb-8">
+          <div class="w-6 h-6 bg-[#111111] rounded-full flex items-center justify-center text-[#F3F2EE]">
+            <el-icon :size="14"><ChatDotRound /></el-icon>
+          </div>
           <span>CodeSage</span>
         </div>
-        <el-button type="primary" class="w-full !rounded-xl !h-12 mb-4" :icon="Plus">开启新对话</el-button>
+        <button class="w-full h-11 bg-[#111111] hover:bg-[#333333] text-white rounded-full flex items-center justify-center gap-2 mb-8" @click="messages = [{ id: Date.now(), role: 'assistant', content: '你好。我是 CodeSage，你的代码工程师。有什么我可以帮你的吗？' }]; drawerVisible = false">
+          <el-icon><Plus /></el-icon>
+          <span class="text-sm font-medium">New Conversation</span>
+        </button>
         <div class="flex-1 overflow-y-auto space-y-1">
           <div 
             v-for="chat in chatHistory" 
             :key="chat.id"
-            class="flex items-center gap-3 p-3 rounded-xl hover:bg-[#f0f4f8]"
+            class="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-[#E8E6E1]"
           >
-            <el-icon class="text-gray-400"><ChatDotRound /></el-icon>
-            <span class="truncate text-sm font-medium">{{ chat.title }}</span>
+            <div class="w-1.5 h-1.5 rounded-full bg-[#D1CFCA]"></div>
+            <span class="truncate text-[13px] font-medium text-[#444444]">{{ chat.title }}</span>
           </div>
         </div>
       </div>
     </el-drawer>
 
     <!-- 主聊天区域 -->
-    <main class="flex-1 flex flex-col relative min-w-0">
+    <main class="flex-1 flex flex-col relative min-w-0 bg-[#FAFAFA]">
       <!-- 顶部导航 -->
-      <header class="h-16 border-b border-[#eef2f7] bg-white/80 backdrop-blur-md flex items-center px-4 justify-between sticky top-0 z-10">
-        <div class="flex items-center gap-3">
-          <el-button 
+      <header class="h-20 flex items-center px-6 justify-between absolute top-0 left-0 right-0 z-10 bg-gradient-to-b from-[#FAFAFA] to-transparent">
+        <div class="flex items-center gap-4">
+          <button 
             v-if="isMobile" 
-            link 
             @click="drawerVisible = true"
-            class="p-2"
+            class="p-2 -ml-2 text-[#555555]"
           >
-            <el-icon :size="24"><Operation /></el-icon>
-          </el-button>
-          <h2 class="font-bold text-lg truncate">当前对话</h2>
+            <el-icon :size="22"><Operation /></el-icon>
+          </button>
+          <h2 class="font-serif text-xl tracking-tight text-[#111111]/80">Current Session</h2>
         </div>
-        <div class="flex items-center gap-2">
-          <el-button link><el-icon :size="20"><Monitor /></el-icon></el-button>
-          <el-button link><el-icon :size="20"><Setting /></el-icon></el-button>
+        <div class="flex items-center gap-4 text-[#777777]">
+          <button class="hover:text-[#111111] transition-colors"><el-icon :size="18"><Monitor /></el-icon></button>
+          <button class="hover:text-[#111111] transition-colors"><el-icon :size="18"><Setting /></el-icon></button>
         </div>
       </header>
 
       <!-- 消息列表 -->
       <div 
         ref="chatContainer"
-        class="flex-1 overflow-y-auto p-4 md:p-8 space-y-6 scroll-smooth"
+        class="flex-1 overflow-y-auto pt-24 pb-32 px-4 md:px-12 scroll-smooth custom-scrollbar"
       >
-        <div 
-          v-for="msg in messages" 
-          :key="msg.id"
-          :class="[
-            'flex gap-4 max-w-4xl mx-auto',
-            msg.role === 'user' ? 'flex-row-reverse' : ''
-          ]"
-        >
+        <div class="max-w-3xl mx-auto space-y-10">
           <div 
+            v-for="msg in messages" 
+            :key="msg.id"
             :class="[
-              'w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 shadow-sm',
-              msg.role === 'user' ? 'bg-[#409eff] text-white' : 'bg-white border border-[#eef2f7]'
+              'flex gap-5 animate-fade-in-up',
+              msg.role === 'user' ? 'flex-row-reverse' : ''
             ]"
           >
-            <el-icon :size="20"><component :is="msg.role === 'user' ? User : ChatDotRound" /></el-icon>
-          </div>
-          <div 
-            :class="[
-              'p-4 rounded-2xl shadow-sm max-w-[85%] leading-relaxed text-[15px]',
-              msg.role === 'user' 
-                ? 'bg-[#409eff] text-white rounded-tr-none' 
-                : 'bg-white border border-[#eef2f7] rounded-tl-none text-[#34495e]'
-            ]"
-          >
-            <div class="whitespace-pre-wrap">{{ msg.content }}</div>
-            <div v-if="isTyping && msg.id === messages[messages.length-1].id && msg.role === 'assistant'" class="inline-block w-1 h-4 bg-current animate-pulse ml-1 align-middle"></div>
+            <!-- 头像 -->
+            <div 
+              :class="[
+                'w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-1',
+                msg.role === 'user' ? 'bg-[#EAE8E0] text-[#111111]' : 'bg-[#111111] text-[#FAFAFA]'
+              ]"
+            >
+              <el-icon :size="14"><component :is="msg.role === 'user' ? User : ChatDotRound" /></el-icon>
+            </div>
+            
+            <!-- 消息内容 -->
+            <div 
+              :class="[
+                'max-w-[85%] leading-relaxed text-[15px]',
+                msg.role === 'user' 
+                  ? 'bg-[#F3F2EE] text-[#111111] px-5 py-3.5 rounded-2xl rounded-tr-sm' 
+                  : 'text-[#111111] pt-1'
+              ]"
+            >
+              <div class="whitespace-pre-wrap font-sans">{{ msg.content }}</div>
+              
+              <!-- 闪烁光标 -->
+              <div 
+                v-if="isTyping && msg.id === messages[messages.length-1].id && msg.role === 'assistant'" 
+                class="inline-block w-2 h-4 bg-[#111111] animate-pulse ml-1 align-middle"
+              ></div>
+            </div>
           </div>
         </div>
       </div>
 
-      <!-- 输入框 -->
-      <footer class="p-4 md:p-8 bg-gradient-to-t from-[#f9fbff] via-[#f9fbff] to-transparent">
-        <div class="max-w-4xl mx-auto relative group">
-          <el-input
-            v-model="userInput"
-            type="textarea"
-            :rows="1"
-            autosize
-            placeholder="输入您的问题..."
-            class="chat-input shadow-xl !rounded-2xl overflow-hidden"
-            @keydown.enter.prevent="sendMessage"
-          >
-            <template #append>
-              <el-button 
-                type="primary" 
-                class="!h-full !rounded-none !bg-[#409eff] hover:!bg-[#66b1ff]"
-                @click="sendMessage"
-                :disabled="!userInput.trim() || isTyping"
-              >
-                <el-icon :size="20"><Promotion /></el-icon>
-              </el-button>
-            </template>
-          </el-input>
-          
-          <div class="absolute right-3 bottom-3 flex items-center gap-2">
-             <el-button 
-                type="primary" 
-                circle
-                :icon="Promotion"
-                @click="sendMessage"
-                :disabled="!userInput.trim() || isTyping"
-                class="shadow-md hover:scale-105 transition-transform"
-              />
+      <!-- 输入框区域 -->
+      <footer class="absolute bottom-0 left-0 right-0 p-4 md:p-8 bg-gradient-to-t from-[#FAFAFA] via-[#FAFAFA] to-transparent pointer-events-none">
+        <div class="max-w-3xl mx-auto relative pointer-events-auto">
+          <div class="bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-[#E8E6E1] p-2 pr-14 relative transition-all duration-300 focus-within:shadow-[0_8px_30px_rgb(0,0,0,0.08)] focus-within:border-[#D1CFCA]">
+            <textarea
+              v-model="userInput"
+              rows="1"
+              placeholder="Ask anything..."
+              class="w-full max-h-[200px] bg-transparent border-none outline-none resize-none py-3 px-4 text-[15px] leading-relaxed text-[#111111] placeholder:text-[#AAAAAA] custom-scrollbar"
+              @input="adjustTextareaHeight"
+              @keydown.enter.prevent="sendMessage"
+            ></textarea>
+            
+            <button 
+              @click="sendMessage"
+              :disabled="!userInput.trim() || isTyping"
+              class="absolute right-3 bottom-3 w-10 h-10 rounded-full flex items-center justify-center transition-all duration-300 disabled:opacity-30 disabled:cursor-not-allowed text-white"
+              :class="userInput.trim() && !isTyping ? 'bg-[#111111] hover:bg-[#333333]' : 'bg-[#D1CFCA]'"
+            >
+              <el-icon :size="16"><Promotion /></el-icon>
+            </button>
           </div>
+          <p class="text-center text-[11px] text-[#999999] mt-3 font-medium tracking-wide">
+            CodeSage AI may produce inaccurate information. Please verify critical details.
+          </p>
         </div>
-        <p class="text-center text-xs text-gray-400 mt-4">
-          CodeSage AI 可能会产生错误信息，请核实重要信息。
-        </p>
       </footer>
     </main>
   </div>
 </template>
 
 <style>
-.chat-input .el-textarea__inner {
-  padding: 16px 60px 16px 16px !important;
-  border-radius: 16px !important;
-  border: 1px solid #eef2f7 !important;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05) !important;
-  resize: none !important;
-  font-size: 15px !important;
-  line-height: 1.6 !important;
-  transition: all 0.3s ease !important;
+/* 隐藏原生 textarea 滚动条 */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
 }
-
-.chat-input .el-textarea__inner:focus {
-  border-color: #409eff !important;
-  box-shadow: 0 4px 24px rgba(64, 158, 255, 0.15) !important;
-}
-
-.mobile-drawer .el-drawer__body {
-  padding: 0 !important;
-}
-
-::-webkit-scrollbar {
-  width: 6px;
-}
-
-::-webkit-scrollbar-track {
+.custom-scrollbar::-webkit-scrollbar-track {
   background: transparent;
 }
-
-::-webkit-scrollbar-thumb {
-  background: #eef2f7;
-  border-radius: 10px;
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #E8E6E1;
+  border-radius: 4px;
 }
-
-::-webkit-scrollbar-thumb:hover {
-  background: #d0d7de;
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #D1CFCA;
 }
 
 /* 动画 */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
 .animate-pulse {
   animation: pulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
