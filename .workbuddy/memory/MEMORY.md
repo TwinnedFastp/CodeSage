@@ -27,7 +27,7 @@
 ## API 路由前缀
 - /api/v1/auth : 注册/登录/登出/邮箱验证/刷新/当前用户
 - /api/v1/conversations : 会话/消息/偏好/事实记忆/任务 CRUD（均需登录，按 user_id 隔离）
-- /api/v1/chat : 流式对话（需登录，自动存消息到会话）
+- /api/v1/chat : 流式对话（需登录，多轮历史记忆 + LightRAG 知识检索 + 自动存消息）
 - /api/v1/rag : LightRAG 知识库
 
 ## 前端
