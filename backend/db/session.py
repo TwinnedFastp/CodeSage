@@ -3,8 +3,8 @@ from sqlalchemy.orm import sessionmaker
 from backend.core.config import settings
 
 # 创建异步数据库引擎
-# echo=True 会打印所有 SQL 语句，方便开发调试
-engine = create_async_engine(settings.async_database_url, echo=True, future=True)
+# echo=False：生产环境不打印全部 SQL（避免日志泄漏与性能损耗），调试时可在 .env 临时改 True
+engine = create_async_engine(settings.async_database_url, echo=False, future=True, pool_pre_ping=True)
 
 # 创建异步会话工厂
 AsyncSessionLocal = sessionmaker(

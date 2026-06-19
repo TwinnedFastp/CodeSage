@@ -13,11 +13,31 @@ services:
     volumes:
       # --- Windows 开发环境测试路径 (相对路径) ---
       - ./data/postgres:/var/lib/postgresql/data
-      
+
       # --- Linux 生产环境路径 (如果需要请切换到下面这行) ---
       # - pgdata:/var/lib/postgresql/data
     ports:
       - "5432:5432"
+
+  # 缓存服务：JWT 令牌黑名单 / 刷新令牌 / 登录限流
+  redis:
+    image: redis:7-alpine
+    container_name: codesage-redis
+    restart: always
+    # 使用挂载进来的自定义配置文件启动
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    volumes:
+      # 配置文件挂载（只读，避免容器内误改）
+      - ./docker_data/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+      # 持久化数据目录挂载（RDB + AOF 落盘）
+      - ./docker_data/redis/data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
   # 后端服务 (FastAPI)
   backend:
@@ -29,6 +49,18 @@ services:
       - POSTGRES_USER=${POSTGRES_USER:-postgres}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
       - POSTGRES_DB=${POSTGRES_DB:-chatgpt_clone}
+      - REDIS_URL=redis://redis:6379/0
+      - JWT_SECRET=${JWT_SECRET:-please-change-this-secret-in-production}
+      - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
+      - ACCESS_TOKEN_EXPIRE_DAYS=${ACCESS_TOKEN_EXPIRE_DAYS:-7}
+      - REFRESH_TOKEN_EXPIRE_DAYS=${REFRESH_TOKEN_EXPIRE_DAYS:-30}
+      - FIELD_ENCRYPTION_KEY=${FIELD_ENCRYPTION_KEY:-}
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - SMTP_FROM=${SMTP_FROM:-}
+      - VERIFY_EMAIL_BASE_URL=${VERIFY_EMAIL_BASE_URL:-http://localhost:80}
       - LLM_API_KEY=${LLM_API_KEY:-}
       - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY:-}
       - LLM_BASE_URL=${LLM_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
@@ -47,7 +79,10 @@ services:
     # 覆盖 Dockerfile 中的 CMD，增加 --reload 模式方便开发
     command: python3 -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
     depends_on:
-      - db
+      db:
+        condition: service_started
+      redis:
+        condition: service_healthy
     ports:
       - "8000:8000"
 

@@ -23,6 +23,38 @@ class Settings(BaseSettings):
     # 如果手动指定了 DATABASE_URL，则优先使用
     DATABASE_URL: str = ""
 
+    # ---- Redis 配置 ----
+    # 容器内：redis://redis:6379/0 ；本地直连：redis://localhost:6379/0
+    REDIS_URL: str = "redis://localhost:6379/0"
+
+    # ---- JWT 配置 ----
+    # 生产环境必须通过环境变量注入高熵随机字符串
+    JWT_SECRET: str = "please-change-this-secret-in-production"
+    JWT_ALGORITHM: str = "HS256"
+    # 登录令牌（access）有效期，单位：天
+    ACCESS_TOKEN_EXPIRE_DAYS: int = 7
+    # 刷新令牌有效期，单位：天
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 30
+
+    # ---- 字段级加密密钥（Fernet，base64 urlsafe）----
+    # 留空时由 crypto 模块生成临时密钥（仅限开发，重启后无法解密历史数据）
+    FIELD_ENCRYPTION_KEY: str = ""
+
+    # ---- 邮箱验证 / SMTP 配置 ----
+    # 验证链接前缀，前端可访问地址
+    VERIFY_EMAIL_BASE_URL: str = "http://localhost:80"
+    # SMTP 留空时验证邮件内容打印到日志（开发模式）
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM: str = ""
+
+    # ---- 登录安全策略 ----
+    LOGIN_MAX_FAIL_ATTEMPTS: int = 5
+    LOGIN_LOCK_MINUTES: int = 15
+    EMAIL_VERIFY_EXPIRE_HOURS: int = 24
+
     # LightRAG 配置
     # LIGHTRAG_WORKING_DIR 用来存放 LightRAG 生成的索引、图谱和缓存文件。
     # 放在 backend/data/lightrag 下，方便开发时直接查看这些学习材料。

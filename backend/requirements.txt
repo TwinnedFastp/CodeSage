@@ -7,9 +7,15 @@ pydantic-settings
 pydantic[email]
 python-multipart
 python-jose[cryptography]
-passlib[bcrypt]
+bcrypt
 httpx
 lightrag-hku
 litellm[proxy]
 numpy
 openai
+# ---- 认证 / 会话存储 新增依赖 ----
+redis
+email-validator
+cryptography
+aiosmtplib
+python-multipart
