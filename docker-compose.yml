@@ -1,23 +1,27 @@
 version: '3.8'
 
 services:
-  # 数据库服务
+  # 数据库服务（使用 pgvector 镜像，预装向量扩展）
   db:
-    image: postgres:15-alpine
+    image: pgvector/pgvector:pg15
     container_name: codesage-db
     restart: always
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      POSTGRES_DB: ${POSTGRES_DB:-chatgpt_clone}
+      POSTGRES_DB: ${POSTGRES_DB:-codesage}
     volumes:
       # --- Windows 开发环境测试路径 (相对路径) ---
       - ./data/postgres:/var/lib/postgresql/data
-
-      # --- Linux 生产环境路径 (如果需要请切换到下面这行) ---
-      # - pgdata:/var/lib/postgresql/data
+      # --- 启动时自动创建 pgvector 扩展 ---
+      - ./docker_data/postgres/init:/docker-entrypoint-initdb.d:ro
     ports:
       - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-codesage}"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
   # 缓存服务：JWT 令牌黑名单 / 刷新令牌 / 登录限流
   redis:
@@ -48,7 +52,7 @@ services:
       - POSTGRES_SERVER=db
       - POSTGRES_USER=${POSTGRES_USER:-postgres}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
-      - POSTGRES_DB=${POSTGRES_DB:-chatgpt_clone}
+      - POSTGRES_DB=${POSTGRES_DB:-codesage}
       - REDIS_URL=redis://redis:6379/0
       - JWT_SECRET=${JWT_SECRET:-please-change-this-secret-in-production}
       - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
@@ -69,18 +73,29 @@ services:
       - EMBEDDING_DIM=${EMBEDDING_DIM:-1024}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
+      # LightRAG 配置
       - LIGHTRAG_ENABLED=${LIGHTRAG_ENABLED:-true}
       - LIGHTRAG_WORKING_DIR=${LIGHTRAG_WORKING_DIR:-data/lightrag}
+      # LightRAG Postgres 存储后端配置（与项目数据库共用）
+      - POSTGRES_HOST=db
+      - POSTGRES_PORT=5432
+      - POSTGRES_DATABASE=${POSTGRES_DB:-codesage}
+      - POSTGRES_WORKSPACE=codesage_rag
+      # 登录安全
+      - LOGIN_MAX_FAIL_ATTEMPTS=${LOGIN_MAX_FAIL_ATTEMPTS:-5}
+      - LOGIN_LOCK_MINUTES=${LOGIN_LOCK_MINUTES:-15}
+      - EMAIL_VERIFY_EXPIRE_HOURS=${EMAIL_VERIFY_EXPIRE_HOURS:-24}
+      - SKIP_EMAIL_VERIFICATION=${SKIP_EMAIL_VERIFICATION:-false}
     volumes:
       # --- 开发环境代码挂载 (实现修改代码后容器内自动热重载) ---
       - ./backend:/app/backend
-      # --- LightRAG 本地索引和图谱数据 ---
+      # --- LightRAG 本地索引和图谱数据（Postgres 存储后作为缓存/日志） ---
       - ./docker_data/lightrag:/app/data/lightrag
     # 覆盖 Dockerfile 中的 CMD，增加 --reload 模式方便开发
     command: python3 -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
     depends_on:
       db:
-        condition: service_started
+        condition: service_healthy
       redis:
         condition: service_healthy
     ports:

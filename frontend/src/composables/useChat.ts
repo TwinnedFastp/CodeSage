@@ -65,7 +65,7 @@ export function useChat(
     target.style.height = Math.min(target.scrollHeight, 200) + 'px'
   }
 
-  async function sendMessage(ensureSession: () => Promise<string | null>) {
+  async function sendMessage(ensureSession: () => Promise<string | null>, useRag: boolean = false, mode: string = 'hybrid') {
     if (!userInput.value.trim() || isTyping.value) return
 
     let sessionId = currentSessionId()
@@ -93,7 +93,7 @@ export function useChat(
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ message: userText, session_id: sessionId }),
+        body: JSON.stringify({ message: userText, session_id: sessionId, use_rag: useRag, mode }),
       })
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
       if (!response.body) throw new Error('无响应流')

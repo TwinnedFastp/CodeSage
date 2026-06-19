@@ -83,8 +83,8 @@ async def _query_knowledge(user_message: str, mode: str = "hybrid") -> str:
         return ""
 
 
-def _build_system_prompt(knowledge: str) -> str:
-    """构建 system prompt，包含 LightRAG 检索到的知识背景。"""
+def _build_system_prompt(knowledge: str, use_rag: bool) -> str:
+    """构建 system prompt，根据是否启用 RAG 决定是否注入知识背景。"""
     base = (
         "你是 CodeSage，一个智能对话系统。你的核心架构："
         "\n\n**记忆与存储**"
@@ -95,33 +95,32 @@ def _build_system_prompt(knowledge: str) -> str:
         "\n\n**角色定位**"
         "\n- 你是专业、缜密、有温度的代码工程师与知识助手。"
         "\n- 你会结合对话上下文连贯地回答用户，并在涉及事实/代码/专业知识时力求准确。"
-
-        "\n\n**知识库（LightRAG）**"
-        "\n- 你接入了 LightRAG 知识检索系统，可以查询项目专属的知识图谱和向量索引。"
     )
-    if knowledge and knowledge.strip():
+    if use_rag and knowledge and knowledge.strip():
         return (
             base
-            + f"\n- 本次检索到以下相关资料：\n---\n{knowledge.strip()}\n---\n请在回答时参考并结合用户问题判断是否引用。"
+            + "\n\n**知识库检索（RAG 模式已开启）**"
+            + f"\n本次从知识库检索到以下相关资料，请在回答时参考并适当引用：\n---\n{knowledge.strip()}\n---"
         )
     return base
 
 
 async def ai_response_generator(
-    history: list[dict], user_message: str, knowledge: str = "",
+    history: list[dict], user_message: str, knowledge: str = "", use_rag: bool = False,
 ):
     """
     大模型流式回复生成器。
 
     - history: 已包含当前 user 消息的历史数组（OpenAI messages 格式）
     - knowledge: LightRAG 检索到的知识上下文（可空）
+    - use_rag: 是否处于 RAG 模式
     """
     if not settings.lightrag_api_key:
         yield f"data: {json.dumps({'content': '未配置大模型 API Key。'}, ensure_ascii=False)}\n\n"
         yield "data: [DONE]\n\n"
         return
 
-    system_prompt = _build_system_prompt(knowledge)
+    system_prompt = _build_system_prompt(knowledge, use_rag)
     messages = [{"role": "system", "content": system_prompt}] + history
 
     try:
@@ -168,7 +167,7 @@ async def _streaming_with_persistence(
     流式生成 + 落库 + 保底标题：
     1. 用户消息先落库
     2. 读取历史（已含本轮 user 消息）
-    3. LightRAG 检索知识（启用时）
+    3. LightRAG 检索知识（仅当 use_rag=true 时，用户显式开启 RAG 模式）
     4. 流式输出 LLM 回复
     5. assistant 回复落库
     6. 保底触发标题生成
@@ -179,15 +178,14 @@ async def _streaming_with_persistence(
     # 2. 读取历史（已包含本轮 user 消息）
     history = await _load_history_messages(db, user_id, session_id)
 
-    # 3. 知识检索（并行不阻塞，但 query 本身是 await 的）
+    # 3. 知识检索：只有用户显式开启 RAG 模式才检索
     knowledge = ""
-    if use_rag or settings.LIGHTRAG_ENABLED:
-        # 默认尝试检索；LightRAG 未启用或无知识时降级为空
+    if use_rag:
         knowledge = await _query_knowledge(user_message, mode)
 
     # 4 & 5. 流式生成 + 收集完整回复
     full_reply_parts: list[str] = []
-    async for chunk in ai_response_generator(history, user_message, knowledge):
+    async for chunk in ai_response_generator(history, user_message, knowledge, use_rag):
         if chunk.startswith("data: ") and chunk.strip() != "data: [DONE]":
             data = chunk[6:].strip()
             try:
@@ -211,9 +209,6 @@ async def _streaming_with_persistence(
             yield f"data: {json.dumps({'title': new_title, 'session_id': session_id}, ensure_ascii=False)}\n\n"
     except Exception:
         logger.debug("读取会话标题失败，跳过保底生成 session_id=%s", session_id)
-
-
-@router.post("/chatstreaming")
 async def chat_streaming(
     request: Request,
     payload: dict,

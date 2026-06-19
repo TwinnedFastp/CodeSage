@@ -13,6 +13,8 @@ lightrag-hku
 litellm[proxy]
 numpy
 openai
+pgvector
+psycopg2-binary
 # ---- 认证 / 会话存储 新增依赖 ----
 redis
 email-validator

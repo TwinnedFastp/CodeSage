@@ -1,4 +1,20 @@
+"""
+LightRAG 服务封装（Postgres + pgvector 存储后端）
+
+设计要点：
+1. 懒加载单例：首次真正调用 insert/query 时才初始化，避免普通后端启动卡住
+2. 使用 Postgres 作为 KV / 向量 / 图谱 / 文档状态存储后端
+   - kv_storage = PGKVStorage
+   - vector_storage = PGVectorStorage（依赖 pgvector 扩展）
+   - graph_storage = PGGraphStorage
+   - doc_status_storage = PGDocStatusStorage
+3. Postgres 连接通过环境变量配置（POSTGRES_HOST / POSTGRES_PORT / 等）
+4. 与项目主数据库共用同一个 PostgreSQL 实例，通过 POSTGRES_WORKSPACE 隔离 RAG 数据
+5. LLM / Embedding 走 OpenAI 兼容接口（智谱 GLM / 百炼 / OpenAI 均可）
+"""
 import asyncio
+import logging
+import os
 from pathlib import Path
 from typing import Any, Optional
 
@@ -6,15 +22,18 @@ import numpy as np
 
 from backend.core.config import settings
 
+logger = logging.getLogger(__name__)
+
 
 class LightRAGService:
     """
-    LightRAG 的项目级封装。
+    LightRAG 项目级封装（Postgres 存储后端）。
 
-    这样写的好处：
-    1. API 层不需要关心 LightRAG 如何初始化。
-    2. 整个后端复用同一个 LightRAG 实例，避免每次请求都重新加载索引。
-    3. 初始化使用“懒加载”，只有第一次真正使用 RAG 时才会加载依赖和读取配置。
+    优势：
+    1. API 层不关心 LightRAG 如何初始化
+    2. 整个后端复用同一个 LightRAG 实例
+    3. 数据存入 Postgres，天然支持多实例并发、备份、事务一致性
+    4. 向量检索走 pgvector 的 HNSW 索引，性能稳定
     """
 
     def __init__(self) -> None:
@@ -22,12 +41,7 @@ class LightRAGService:
         self._lock = asyncio.Lock()
 
     async def _ensure_ready(self) -> Any:
-        """
-        确保 LightRAG 已初始化，并返回可用的 rag 实例。
-
-        注意：LightRAG 初始化会创建本地存储目录、加载索引，并准备图谱/向量相关状态。
-        这里用 asyncio.Lock 防止并发请求同时初始化多个实例。
-        """
+        """确保 LightRAG 已初始化并返回可用实例（双重检查锁）。"""
         if self._rag is not None:
             return self._rag
 
@@ -39,16 +53,40 @@ class LightRAGService:
                 raise RuntimeError("LightRAG 当前未启用，请检查 LIGHTRAG_ENABLED 配置。")
 
             if not settings.lightrag_api_key:
-                raise RuntimeError("缺少 LLM_API_KEY 或 DASHSCOPE_API_KEY，无法调用百炼/OpenAI 兼容模型。")
+                raise RuntimeError("缺少 LLM_API_KEY，无法调用大语言模型。")
 
-            # LightRAG 是可选重依赖，放在函数内导入可以让普通后端启动更稳。
+            # 确保 LightRAG Postgres 连接环境变量已设置
+            # 项目主库用 POSTGRES_SERVER，LightRAG 用 POSTGRES_HOST，这里做兼容
+            if not os.environ.get("POSTGRES_HOST"):
+                os.environ["POSTGRES_HOST"] = settings.POSTGRES_SERVER
+            if not os.environ.get("POSTGRES_PORT"):
+                os.environ["POSTGRES_PORT"] = "5432"
+            if not os.environ.get("POSTGRES_USER"):
+                os.environ["POSTGRES_USER"] = settings.POSTGRES_USER
+            if not os.environ.get("POSTGRES_PASSWORD"):
+                os.environ["POSTGRES_PASSWORD"] = settings.POSTGRES_PASSWORD
+            if not os.environ.get("POSTGRES_DATABASE"):
+                os.environ["POSTGRES_DATABASE"] = settings.POSTGRES_DB
+            if not os.environ.get("POSTGRES_WORKSPACE"):
+                os.environ["POSTGRES_WORKSPACE"] = "codesage_rag"
+
+            logger.info(
+                "初始化 LightRAG Postgres 后端：host=%s db=%s workspace=%s",
+                os.environ.get("POSTGRES_HOST"),
+                os.environ.get("POSTGRES_DATABASE"),
+                os.environ.get("POSTGRES_WORKSPACE"),
+            )
+
+            # LightRAG 是可选重依赖，放在函数内导入
             try:
                 from lightrag import LightRAG
                 from lightrag.kg.shared_storage import initialize_pipeline_status
                 from lightrag.llm.openai import openai_complete_if_cache, openai_embed
                 from lightrag.utils import EmbeddingFunc
             except ImportError as exc:
-                raise RuntimeError("未安装 LightRAG，请先执行 pip install -r backend/requirements.txt。") from exc
+                raise RuntimeError(
+                    "未安装 LightRAG，请先执行 pip install lightrag-hku pgvector asyncpg。"
+                ) from exc
 
             working_dir = Path(settings.LIGHTRAG_WORKING_DIR)
             working_dir.mkdir(parents=True, exist_ok=True)
@@ -59,12 +97,7 @@ class LightRAGService:
                 history_messages: Optional[list[dict[str, str]]] = None,
                 **kwargs: Any,
             ) -> str:
-                """
-                LightRAG 调用大语言模型的入口。
-
-                这里使用 openai_complete_if_cache，但传入的是百炼的 base_url、api_key 和模型名。
-                因为百炼兼容 OpenAI Chat Completions 协议，所以 LightRAG 不需要知道背后是谁。
-                """
+                """LightRAG 调用大语言模型的入口（OpenAI 兼容协议）。"""
                 return await openai_complete_if_cache(
                     settings.LLM_MODEL,
                     prompt,
@@ -76,12 +109,7 @@ class LightRAGService:
                 )
 
             async def embedding_func(texts: list[str]) -> np.ndarray:
-                """
-                LightRAG 调用向量模型的入口。
-
-                默认使用百炼 text-embedding-v4。官方文档说明它默认输出 1024 维，
-                所以 EMBEDDING_DIM 也默认配置为 1024，二者必须保持一致。
-                """
+                """LightRAG 调用向量模型的入口。"""
                 return await openai_embed(
                     texts,
                     model=settings.EMBEDDING_MODEL,
@@ -89,8 +117,13 @@ class LightRAGService:
                     base_url=settings.lightrag_base_url,
                 )
 
+            # 使用 Postgres 作为全部存储后端
             rag = LightRAG(
                 working_dir=str(working_dir),
+                kv_storage="PGKVStorage",
+                vector_storage="PGVectorStorage",
+                graph_storage="PGGraphStorage",
+                doc_status_storage="PGDocStatusStorage",
                 llm_model_func=llm_model_func,
                 embedding_func=EmbeddingFunc(
                     embedding_dim=settings.EMBEDDING_DIM,
@@ -98,22 +131,17 @@ class LightRAGService:
                 ),
             )
 
-            # 官方推荐：先初始化存储，再初始化 pipeline 状态。
+            # 初始化存储和 pipeline 状态
             await rag.initialize_storages()
             await initialize_pipeline_status()
 
             self._rag = rag
+            logger.info("LightRAG Postgres 后端初始化完成")
             return self._rag
 
     async def insert_text(self, text: str) -> None:
-        """
-        将原始文本写入 LightRAG 知识库。
-
-        LightRAG 会在内部完成分块、实体关系抽取、向量化和图谱更新。
-        """
+        """将原始文本写入 LightRAG 知识库（分块 + 实体关系抽取 + 向量化 + 图谱更新）。"""
         rag = await self._ensure_ready()
-
-        # 新版 LightRAG 提供异步 ainsert；如果当前版本没有，就退回到线程中执行同步 insert。
         if hasattr(rag, "ainsert"):
             await rag.ainsert(text)
         else:
@@ -123,14 +151,13 @@ class LightRAGService:
         """
         查询 LightRAG 知识库。
 
-        mode 常用取值：
-        - naive：普通向量检索，适合简单问答
-        - local：偏向局部实体关系
-        - global：偏向全局图谱关系
-        - hybrid：混合模式，通常作为默认选择
+        mode 取值：
+        - naive：普通向量检索
+        - local：局部实体关系
+        - global：全局图谱关系
+        - hybrid：混合模式（默认，效果最好）
         """
         rag = await self._ensure_ready()
-
         try:
             from lightrag import QueryParam
         except ImportError as exc:
@@ -145,6 +172,43 @@ class LightRAGService:
 
         return str(answer)
 
+    async def list_documents(self) -> list[dict]:
+        """列出知识库中已处理的文档（用于前端知识库管理面板）。"""
+        rag = await self._ensure_ready()
+        try:
+            # LightRAG 1.5+ 提供 document_status 存储
+            doc_status_storage = rag.doc_status_storage
+            if hasattr(doc_status_storage, "get_all"):
+                docs = await doc_status_storage.get_all()
+                return [
+                    {
+                        "id": doc.get("id", ""),
+                        "content_summary": doc.get("content_summary", "")[:100],
+                        "content_length": doc.get("content_length", 0),
+                        "status": doc.get("status", "unknown"),
+                        "created_at": str(doc.get("created_at", "")),
+                        "updated_at": str(doc.get("updated_at", "")),
+                    }
+                    for doc in (docs or [])
+                ]
+        except Exception:
+            logger.exception("列出文档失败")
+        return []
 
-# 全局单例：FastAPI 路由直接复用它。
+    async def delete_document(self, doc_id: str) -> bool:
+        """删除知识库中的某个文档及其相关实体/关系/向量。"""
+        rag = await self._ensure_ready()
+        try:
+            if hasattr(rag, "adelete_by_doc_id"):
+                await rag.adelete_by_doc_id(doc_id)
+                return True
+            elif hasattr(rag, "delete_by_doc_id"):
+                await asyncio.to_thread(rag.delete_by_doc_id, doc_id)
+                return True
+        except Exception:
+            logger.exception("删除文档失败 doc_id=%s", doc_id)
+        return False
+
+
+# 全局单例：FastAPI 路由直接复用
 lightrag_service = LightRAGService()

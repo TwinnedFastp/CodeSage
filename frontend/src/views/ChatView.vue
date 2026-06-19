@@ -4,12 +4,14 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
   ChatDotRound, Operation, Plus, User as UserIcon, Monitor, Setting,
-  Fold, Expand, Promotion, SwitchButton, Edit,
+  Fold, Expand, Promotion, SwitchButton, Edit, Collection, Files,
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useResponsive } from '@/composables/useResponsive'
 import { useSessions } from '@/composables/useSessions'
 import { useChat } from '@/composables/useChat'
+import { useRag } from '@/composables/useRag'
+import KnowledgePanel from '@/components/KnowledgePanel.vue'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -37,6 +39,13 @@ const {
   (id) => { tryAutoGenerateTitle(id).catch(() => {}) },
   (id, title) => { applyGeneratedTitle(id, title) },
 )
+
+// ---- RAG 知识库 ----
+const {
+  ragReady, ragMode, ragActive,
+  documents, loadingDocs, uploading, knowledgePanelVisible,
+  loadDocuments, uploadDocument, removeDocument, openKnowledgePanel,
+} = useRag()
 
 // ---- 初始化 ----
 ;(async () => {
@@ -98,8 +107,16 @@ function handleTitleKeydown(e: KeyboardEvent, sessionId: string) {
 }
 
 async function onSend() {
-  await doSend(async () => await createSession())
+  await doSend(async () => await createSession(), ragActive.value, ragMode.value === 'off' ? 'hybrid' : ragMode.value)
 }
+
+// RAG 模式切换选项
+const ragModeOptions = [
+  { value: 'hybrid', label: '混合' },
+  { value: 'local', label: '局部' },
+  { value: 'global', label: '全局' },
+  { value: 'naive', label: '朴素' },
+]
 </script>
 
 <template>
@@ -230,6 +247,17 @@ async function onSend() {
         </div>
         <div class="flex items-center gap-3 text-[#777777]">
           <button v-if="currentSessionId" class="hover:text-[#111111] transition-colors text-[12px] px-3 py-1.5 rounded-full hover:bg-[#F3F2EE]" @click="onDeleteCurrent">删除会话</button>
+          <button
+            v-if="ragReady"
+            class="flex items-center gap-1.5 hover:text-[#111111] transition-colors text-[12px] px-3 py-1.5 rounded-full hover:bg-[#F3F2EE]"
+            :class="ragActive ? 'text-[#111111] font-medium' : ''"
+            @click="openKnowledgePanel"
+            title="知识库管理"
+          >
+            <el-icon :size="16"><Collection /></el-icon>
+            <span class="hidden sm:inline">知识库</span>
+            <span v-if="documents.length > 0" class="text-[10px] px-1.5 py-0.5 rounded-full bg-[#111111] text-white">{{ documents.length }}</span>
+          </button>
           <button class="hover:text-[#111111] transition-colors"><el-icon :size="18"><Monitor /></el-icon></button>
           <button class="hover:text-[#111111] transition-colors"><el-icon :size="18"><Setting /></el-icon></button>
         </div>
@@ -252,11 +280,33 @@ async function onSend() {
 
       <footer class="absolute bottom-0 left-0 right-0 p-4 md:p-8 bg-gradient-to-t from-[#FAFAFA] via-[#FAFAFA] to-transparent pointer-events-none">
         <div class="max-w-3xl mx-auto relative pointer-events-auto">
+          <!-- RAG 模式切换条 -->
+          <div v-if="ragReady" class="flex items-center justify-between mb-2 px-2">
+            <div class="flex items-center gap-2">
+              <button
+                @click="ragMode = ragActive ? 'off' : 'hybrid'"
+                :class="['flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-medium transition-all', ragActive ? 'bg-[#111111] text-white' : 'bg-[#F3F2EE] text-[#777] hover:text-[#111]']"
+              >
+                <el-icon :size="13"><Files /></el-icon>
+                <span>知识库 {{ ragActive ? '已开启' : '已关闭' }}</span>
+              </button>
+              <div v-if="ragActive" class="flex items-center gap-1">
+                <button
+                  v-for="opt in ragModeOptions"
+                  :key="opt.value"
+                  @click="ragMode = opt.value as any"
+                  :class="['px-2.5 py-1 rounded-full text-[11px] transition-all', ragMode === opt.value ? 'bg-[#E8E6E1] text-[#111] font-medium' : 'text-[#999] hover:text-[#555]']"
+                >{{ opt.label }}</button>
+              </div>
+            </div>
+            <span v-if="ragActive" class="text-[11px] text-[#999]">回复将引用知识库</span>
+          </div>
+
           <div class="bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-[#E8E6E1] p-2 pr-14 relative transition-all duration-300 focus-within:shadow-[0_8px_30px_rgb(0,0,0,0.08)] focus-within:border-[#D1CFCA]">
             <textarea
               v-model="userInput"
               rows="1"
-              :placeholder="currentSessionId ? 'Ask anything...' : '点击 New Conversation 开始对话...'"
+              :placeholder="currentSessionId ? (ragActive ? '基于知识库提问...' : 'Ask anything...') : '点击 New Conversation 开始对话...'"
               class="w-full max-h-[200px] bg-transparent border-none outline-none resize-none py-3 px-4 text-[15px] leading-relaxed text-[#111111] placeholder:text-[#AAAAAA] custom-scrollbar"
               @input="adjustTextareaHeight"
               @keydown.enter.prevent="onSend"
@@ -269,5 +319,16 @@ async function onSend() {
         </div>
       </footer>
     </main>
+
+    <!-- 知识库管理抽屉 -->
+    <KnowledgePanel
+      v-model:visible="knowledgePanelVisible"
+      :documents="documents"
+      :loading-docs="loadingDocs"
+      :uploading="uploading"
+      @upload="uploadDocument"
+      @remove="removeDocument"
+      @refresh="loadDocuments"
+    />
   </div>
 </template>
