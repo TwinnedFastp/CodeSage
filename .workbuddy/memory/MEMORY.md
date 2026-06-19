@@ -35,7 +35,8 @@
 - 极简杂志风：#FAFAFA / #111111 / #F3F2EE / DM Serif Display + Inter
 - src/api/request.ts : axios + JWT 拦截器 + 401 跳登录
 - src/stores/auth.ts : pinia 认证状态
-- src/views : Login/Register/VerifyEmail/Chat
+- src/composables/ : useResponsive / useSessions / useChat / useLoginForm / useRegisterForm（2026-06-19 重构）
+- src/views : Login/Register/VerifyEmail/Chat（视图层只保留 UI，逻辑全在 composables）
 - nginx.conf : /api 反代 backend:8000，SSE 关闭 buffering
 
 ## 测试

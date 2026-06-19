@@ -21,7 +21,7 @@ const {
   editingSessionId, editingTitle,
   loadSessions, newConversation: createSession, selectSession, deleteSession,
   startEditTitle, cancelEditTitle, confirmEditTitle,
-  tryAutoGenerateTitle,
+  tryAutoGenerateTitle, applyGeneratedTitle,
 } = useSessions()
 
 const chatContainer = ref<HTMLElement | null>(null)
@@ -35,6 +35,7 @@ const {
   chatContainer,
   (id) => { currentSessionId.value = id; loadSessions() },
   (id) => { tryAutoGenerateTitle(id).catch(() => {}) },
+  (id, title) => { applyGeneratedTitle(id, title) },
 )
 
 // ---- 初始化 ----

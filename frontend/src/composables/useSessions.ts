@@ -103,6 +103,14 @@ export function useSessions() {
   // ---- AI 自动生成标题 ----
   const titleGeneratedSessions = ref(new Set<string>())
 
+  /** 后端 SSE 推送标题时直接更新本地（优先级最高，避免重复调接口） */
+  function applyGeneratedTitle(sessionId: string, title: string) {
+    if (!title) return
+    const idx = sessions.value.findIndex(s => s.id === sessionId)
+    if (idx !== -1) sessions.value[idx].title = title
+    titleGeneratedSessions.value.add(sessionId)
+  }
+
   async function tryAutoGenerateTitle(sessionId: string) {
     if (titleGeneratedSessions.value.has(sessionId)) return
     const session = sessions.value.find(s => s.id === sessionId)
@@ -114,7 +122,7 @@ export function useSessions() {
       if (idx !== -1) sessions.value[idx].title = updated.title
       titleGeneratedSessions.value.add(sessionId)
     } catch {
-      // 静默忽略
+      // 静默忽略（后端保底已处理）
     }
   }
 
@@ -123,6 +131,6 @@ export function useSessions() {
     editingSessionId, editingTitle,
     loadSessions, newConversation, selectSession, deleteSession,
     startEditTitle, cancelEditTitle, confirmEditTitle,
-    tryAutoGenerateTitle,
+    tryAutoGenerateTitle, applyGeneratedTitle,
   }
 }

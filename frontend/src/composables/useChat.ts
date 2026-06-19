@@ -12,6 +12,7 @@ export function useChat(
   chatContainer: import('vue').Ref<HTMLElement | null>,
   onSessionCreated?: (id: string) => void,
   onStreamEnd?: (sessionId: string) => void,
+  onTitleGenerated?: (sessionId: string, title: string) => void,
 ) {
   const auth = useAuthStore()
   const messages = ref<DisplayMessage[]>([])
@@ -118,6 +119,11 @@ export function useChat(
               if (backendSessionId !== sessionId && onSessionCreated) {
                 onSessionCreated(backendSessionId)
               }
+              continue
+            }
+            // 后端推送的 AI 生成标题
+            if (parsed.title && parsed.session_id && onTitleGenerated) {
+              onTitleGenerated(parsed.session_id as string, parsed.title as string)
               continue
             }
             const t = messages.value.find(m => m.id === assistantId)
