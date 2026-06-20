@@ -1,5 +1,6 @@
 /**
  * 注册表单逻辑：校验 + 密码强度 + 提交 + 开发模式验证链接
+ * 参考若依框架：前后端双重校验、错误分类提示、防暴力刷新
  */
 import { ref, reactive, computed } from 'vue'
 import { useRouter } from 'vue-router'
@@ -15,6 +16,9 @@ export function useRegisterForm() {
   const registeredEmail = ref('')
   const devVerifyLink = ref('')
   const captchaVerified = ref(false)
+  const errorMsg = ref('')
+  // 拼图验证码组件的 key，变更后强制重新挂载以重置内部状态
+  const captchaKey = ref(0)
 
   const passwordValidator: FormItemRule['validator'] = (_rule, value: string, callback) => {
     if (!value) return callback(new Error('请输入密码'))
@@ -54,10 +58,17 @@ export function useRegisterForm() {
   const strengthLabel = computed(() => ['极弱', '弱', '一般', '良好', '强'][strength.value - 1] || '')
   const strengthColor = computed(() => ['#D9483F', '#E8854A', '#F0C042', '#6BAF6B', '#3A8A5E'][strength.value - 1] || '#E8E6E1')
 
-  function onCaptchaVerified(val: boolean) { captchaVerified.value = val }
+  function onCaptchaVerified(val: boolean) {
+    captchaVerified.value = val
+    if (val) errorMsg.value = ''
+  }
 
   async function onSubmit() {
+    // 防重入
+    if (submitting.value) return
+    errorMsg.value = ''
     if (!formRef.value) return
+
     const valid = await formRef.value.validate().catch(() => false)
     if (!valid) return
     if (!captchaVerified.value) { ElMessage.warning('请先完成拼图验证'); return }
@@ -72,7 +83,24 @@ export function useRegisterForm() {
       }
       ElMessage.success(resp.message || '注册成功')
     } catch (err: any) {
-      ElMessage.error(err.response?.data?.message || '注册失败，请稍后重试')
+      const status = err.response?.status
+      const detail = err.response?.data?.detail || err.response?.data?.message || ''
+      const msg = detail || err.message || '注册失败，请稍后重试'
+      errorMsg.value = msg
+
+      if (status === 409) {
+        ElMessage.error('该邮箱已注册，请直接登录')
+      } else if (err.code === 'ERR_NETWORK') {
+        ElMessage.error('无法连接到服务器，请确认后端已启动')
+      } else if (status && status >= 500) {
+        ElMessage.error('服务器异常，请稍后重试')
+      } else {
+        ElMessage.error(msg)
+      }
+
+      // 注册失败后重置拼图验证（安全考虑）
+      captchaVerified.value = false
+      captchaKey.value++
     } finally {
       submitting.value = false
     }
@@ -90,6 +118,7 @@ export function useRegisterForm() {
 
   return {
     formRef, form, rules, submitting, registeredEmail, devVerifyLink, captchaVerified,
+    errorMsg, captchaKey,
     strength, strengthLabel, strengthColor,
     onCaptchaVerified, onSubmit, goLogin, handleVerifyClick,
   }
