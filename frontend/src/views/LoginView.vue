@@ -5,7 +5,7 @@ import { useLoginForm } from '@/composables/useLoginForm'
 
 const {
   formRef, form, rules, submitting,
-  captchaVerified, rememberMe, errorMsg, captchaKey,
+  rememberMe, errorMsg, captchaKey,
   onCaptchaVerified, onSubmit,
 } = useLoginForm()
 </script>
