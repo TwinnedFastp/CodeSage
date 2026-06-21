@@ -87,7 +87,7 @@ export function useChat(
 
     try {
       const token = auth.accessToken
-      const response = await fetch('/api/v1/chat/chatstreaming', {
+      const response = await fetch('/api/v1/chat/stream', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
