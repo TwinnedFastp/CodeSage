@@ -31,6 +31,12 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true, title: 'CodeSage · 你的代码工程师' },
   },
   {
+    path: '/settings',
+    name: 'settings',
+    component: () => import('@/views/SettingsView.vue'),
+    meta: { requiresAuth: true, title: '设置 · CodeSage' },
+  },
+  {
     path: '/:pathMatch(.*)*',
     redirect: '/chat',
   },

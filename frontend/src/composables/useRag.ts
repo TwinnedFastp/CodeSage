@@ -1,5 +1,5 @@
 /**
- * RAG 知识库管理：状态检查 / 文档上传 / 文档列表 / 文档删除
+ * RAG 知识库管理：状态检查 / 文档上传 / 文件上传 / 文档列表 / 文档删除
  */
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -74,6 +74,22 @@ export function useRag() {
     }
   }
 
+  async function uploadFile(filename: string, content: string, source?: string) {
+    if (!content.trim()) { ElMessage.warning('文件内容为空'); return false }
+    uploading.value = true
+    try {
+      const result = await ragApi.uploadFile({ filename, content, source })
+      ElMessage.success(result.message || '文件已写入知识库')
+      await loadDocuments()
+      return true
+    } catch (err: any) {
+      ElMessage.error(err.response?.data?.detail || '上传文件失败')
+      return false
+    } finally {
+      uploading.value = false
+    }
+  }
+
   function openKnowledgePanel() {
     knowledgePanelVisible.value = true
     loadDocuments()
@@ -84,7 +100,7 @@ export function useRag() {
   return {
     ragReady, ragEnabled, ragMode, ragActive,
     documents, loadingDocs, uploading, knowledgePanelVisible,
-    checkStatus, loadDocuments, uploadDocument, removeDocument,
+    checkStatus, loadDocuments, uploadDocument, uploadFile, removeDocument,
     openKnowledgePanel,
   }
 }

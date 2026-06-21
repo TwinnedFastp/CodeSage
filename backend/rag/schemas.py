@@ -7,11 +7,21 @@ class RAGDocumentIn(BaseModel):
     """
     写入知识库的请求体。
 
-    text 是必填的原始资料；source 是可选来源，方便你之后扩展成“文件名/网页地址/备注”。
+    text 是必填的原始资料；source 是可选来源，方便你之后扩展成"文件名/网页地址/备注"。
     """
 
     text: str = Field(..., min_length=1, description="需要写入 LightRAG 知识库的文本")
     source: Optional[str] = Field(default=None, description="资料来源，可选")
+
+
+class FileUploadIn(BaseModel):
+    """
+    文件上传请求体（前端读取文件文本内容后上传）。
+    """
+
+    filename: str = Field(..., description="原始文件名，如 notes.md")
+    content: str = Field(..., min_length=1, description="文件文本内容")
+    source: Optional[str] = Field(default=None, description="来源标注，可选")
 
 
 class RAGQueryIn(BaseModel):
@@ -38,6 +48,15 @@ class RAGQueryOut(BaseModel):
 class RAGWriteOut(BaseModel):
     """
     写入知识库后的响应体。
+    """
+
+    success: bool
+    message: str
+
+
+class FileUploadOut(BaseModel):
+    """
+    文件上传后的响应体。
     """
 
     success: bool

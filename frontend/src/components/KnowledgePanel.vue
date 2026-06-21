@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { Collection, Upload, Delete, Document } from '@element-plus/icons-vue'
+import { Collection, Upload, Delete, Document, Files } from '@element-plus/icons-vue'
 
 const props = defineProps<{
   visible: boolean
@@ -12,12 +12,15 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:visible': [val: boolean]
   upload: [text: string, source?: string]
+  'upload-file': [filename: string, content: string, source?: string]
   remove: [docId: string]
   refresh: []
 }>()
 
 const uploadText = ref('')
 const uploadSource = ref('')
+const fileInputRef = ref<HTMLInputElement | null>(null)
+const selectedFileName = ref('')
 
 function close() { emit('update:visible', false) }
 
@@ -26,6 +29,40 @@ async function doUpload() {
   emit('upload', uploadText.value, uploadSource.value || undefined)
   uploadText.value = ''
   uploadSource.value = ''
+}
+
+function onFileSelected(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+
+  // 只允许 .md / .txt 文件
+  const ext = file.name.split('.').pop()?.toLowerCase()
+  if (!ext || !['md', 'txt', 'markdown'].includes(ext)) {
+    alert('仅支持 .md 和 .txt 文件')
+    input.value = ''
+    return
+  }
+
+  selectedFileName.value = file.name
+  const reader = new FileReader()
+  reader.onload = () => {
+    const content = reader.result as string
+    emit('upload-file', file.name, content, uploadSource.value || undefined)
+    // 重置 input 以便重复选择同一文件
+    input.value = ''
+    selectedFileName.value = ''
+  }
+  reader.onerror = () => {
+    alert('文件读取失败')
+    input.value = ''
+    selectedFileName.value = ''
+  }
+  reader.readAsText(file)
+}
+
+function triggerFileSelect() {
+  fileInputRef.value?.click()
 }
 
 function formatTime(t: string) {
@@ -64,15 +101,43 @@ function formatSize(len: number) {
 
       <!-- 上传区域 -->
       <div class="mb-6 p-4 rounded-2xl bg-white border border-[#E8E6E1]">
+        <!-- 文件上传 -->
         <div class="flex items-center gap-2 mb-3">
-          <el-icon :size="14" class="text-[#555]"><Upload /></el-icon>
-          <span class="text-[13px] font-semibold text-[#111]">写入新文档</span>
+          <el-icon :size="14" class="text-[#555]"><Files /></el-icon>
+          <span class="text-[13px] font-semibold text-[#111]">上传文件</span>
+          <span class="text-[11px] text-[#999] ml-auto">支持 .md / .txt</span>
         </div>
         <input
-          v-model="uploadSource"
-          placeholder="来源（可选，如：项目文档 / 论文 / 笔记）"
-          class="w-full mb-2 px-3 py-2 text-[13px] bg-[#FAFAFA] border border-[#E8E6E1] rounded-lg outline-none focus:border-[#111] transition-colors"
+          ref="fileInputRef"
+          type="file"
+          accept=".md,.txt,.markdown"
+          class="hidden"
+          @change="onFileSelected"
         />
+        <div class="flex gap-2 mb-3">
+          <button
+            @click="triggerFileSelect"
+            :disabled="uploading"
+            class="flex-1 h-9 px-3 bg-[#F3F2EE] hover:bg-[#E8E6E1] text-[#333] rounded-lg text-[13px] font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
+          >
+            <el-icon :size="14"><Upload /></el-icon>
+            <span>{{ selectedFileName || '选择文件' }}</span>
+          </button>
+          <input
+            v-model="uploadSource"
+            placeholder="来源（可选）"
+            class="flex-1 px-3 py-2 text-[13px] bg-[#FAFAFA] border border-[#E8E6E1] rounded-lg outline-none focus:border-[#111] transition-colors"
+          />
+        </div>
+
+        <!-- 分割线 -->
+        <div class="border-t border-dashed border-[#E8E6E1] my-3"></div>
+
+        <!-- 文本输入 -->
+        <div class="flex items-center gap-2 mb-3">
+          <el-icon :size="14" class="text-[#555]"><Document /></el-icon>
+          <span class="text-[13px] font-semibold text-[#111]">或直接粘贴文本</span>
+        </div>
         <textarea
           v-model="uploadText"
           placeholder="粘贴或输入要写入知识库的文本内容..."

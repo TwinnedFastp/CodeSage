@@ -1,13 +1,15 @@
 """
-聊天流式接口（LightRAG 知识增强 + 多轮历史记忆）
+聊天流式接口（LightRAG 知识增强 + 多轮历史记忆 + 动态供应商配置）
 
 设计要点：
 1. 需要登录（依赖 get_current_user）
 2. 每轮对话会读取会话历史消息，拼成 messages 数组传给 LLM —— 让 AI 真正"记住"上下文
 3. 集成 LightRAG：默认检索知识库相关片段，作为 system prompt 的知识背景
-4. 用户消息先落库，流式输出 LLM 回复，流结束后 assistant 回复落库
-5. 流结束后保底触发标题生成（前端也会调，二者去重）
-6. 无 session_id 时自动创建会话
+4. 供应商配置动态化：从 DB 读取用户启用的供应商配置（API Key / Base URL / 模型），
+   无 DB 配置时兜底使用 .env 环境变量
+5. 用户消息先落库，流式输出 LLM 回复，流结束后 assistant 回复落库
+6. 流结束后保底触发标题生成（前端也会调，二者去重）
+7. 无 session_id 时自动创建会话
 """
 import json
 import logging
@@ -19,19 +21,15 @@ from openai import AsyncOpenAI
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.deps import get_current_user
-from backend.core.config import settings
 from backend.db.session import get_db
 from backend.models.user import User
-from backend.services import conversation_service, lightrag_service
+from backend.rag.service import lightrag_service
+from backend.services import conversation_service
+from backend.services.provider_service import resolve_provider_config
+from backend.sys_prompts import CHAT_SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-
-# 全局复用同一个 OpenAI 兼容客户端（百炼 / OpenAI / DeepSeek 均可）
-client = AsyncOpenAI(
-    api_key=settings.lightrag_api_key,
-    base_url=settings.lightrag_base_url,
-)
 
 # 历史消息上限：取最近 N 条喂给 LLM，避免 token 爆炸
 MAX_HISTORY_MESSAGES = 20
@@ -60,7 +58,6 @@ async def _load_history_messages(db: AsyncSession, user_id: int, session_id: str
         logger.exception("读取历史消息失败 session_id=%s", session_id)
         return []
 
-    # list_messages 按 created_at asc 返回，取最后 N 条保持顺序
     history = []
     for m in msgs:
         role = "user" if m.role == "user" else "assistant"
@@ -68,34 +65,27 @@ async def _load_history_messages(db: AsyncSession, user_id: int, session_id: str
     return history
 
 
-async def _query_knowledge(user_message: str, mode: str = "hybrid") -> str:
+async def _query_knowledge(
+    user_id: int, provider_config: dict, user_message: str, mode: str = "hybrid",
+) -> str:
     """
     用 LightRAG 检索知识库，返回相关上下文文本。
 
     LightRAG 不可用时静默降级（返回空串），不影响普通对话。
     """
+    from backend.core.config import settings
     if not settings.LIGHTRAG_ENABLED:
         return ""
     try:
-        return await lightrag_service.query(user_message, mode=mode)
+        return await lightrag_service.query(user_id, provider_config, user_message, mode=mode)
     except Exception:
-        logger.exception("LightRAG 知识检索失败，降级为纯对话")
+        logger.exception("LightRAG 知识检索失败，降级为纯对话 user_id=%s", user_id)
         return ""
 
 
 def _build_system_prompt(knowledge: str, use_rag: bool) -> str:
     """构建 system prompt，根据是否启用 RAG 决定是否注入知识背景。"""
-    base = (
-        "你是 CodeSage，一个智能对话系统。你的核心架构："
-        "\n\n**记忆与存储**"
-        "\n- 你的所有对话消息都会实时保存到 PostgreSQL 数据库的 chat_messages 表中。"
-        "\n- 当用户在同一个会话中继续对话时，你会收到该会话的历史消息作为上下文——这意味着你确实能'记住'之前的交流内容。"
-        "\n- 用户问起'你记在哪里'时，请如实回答：对话历史存在 PostgreSQL 数据库（chat_messages 表），按会话隔离，支持跨轮次上下文回忆。"
-
-        "\n\n**角色定位**"
-        "\n- 你是专业、缜密、有温度的代码工程师与知识助手。"
-        "\n- 你会结合对话上下文连贯地回答用户，并在涉及事实/代码/专业知识时力求准确。"
-    )
+    base = CHAT_SYSTEM_PROMPT
     if use_rag and knowledge and knowledge.strip():
         return (
             base
@@ -106,26 +96,39 @@ def _build_system_prompt(knowledge: str, use_rag: bool) -> str:
 
 
 async def ai_response_generator(
-    history: list[dict], user_message: str, knowledge: str = "", use_rag: bool = False,
+    history: list[dict],
+    user_message: str,
+    provider_config: dict,
+    knowledge: str = "",
+    use_rag: bool = False,
 ):
     """
     大模型流式回复生成器。
 
     - history: 已包含当前 user 消息的历史数组（OpenAI messages 格式）
+    - provider_config: 用户的供应商配置（含 API Key / Base URL / 模型名）
     - knowledge: LightRAG 检索到的知识上下文（可空）
     - use_rag: 是否处于 RAG 模式
     """
-    if not settings.lightrag_api_key:
-        yield f"data: {json.dumps({'content': '未配置大模型 API Key。'}, ensure_ascii=False)}\n\n"
+    api_key = provider_config.get("llm_api_key", "")
+    base_url = provider_config.get("llm_base_url", "")
+    llm_model = provider_config.get("llm_model", "")
+
+    if not api_key:
+        yield f"data: {json.dumps({'content': '未配置大模型 API Key，请在设置页面添加供应商配置。'}, ensure_ascii=False)}\n\n"
         yield "data: [DONE]\n\n"
         return
+
+    # 每次请求按用户配置创建独立的 OpenAI 客户端
+    # （AsyncOpenAI 内部有连接池，轻量创建无性能问题）
+    client = AsyncOpenAI(api_key=api_key, base_url=base_url)
 
     system_prompt = _build_system_prompt(knowledge, use_rag)
     messages = [{"role": "system", "content": system_prompt}] + history
 
     try:
         response = await client.chat.completions.create(
-            model=settings.LLM_MODEL,
+            model=llm_model,
             messages=messages,
             stream=True,
         )
@@ -133,14 +136,15 @@ async def ai_response_generator(
             if chunk.choices and chunk.choices[0].delta.content:
                 yield f"data: {json.dumps({'content': chunk.choices[0].delta.content}, ensure_ascii=False)}\n\n"
     except Exception as e:
-        logger.exception("调用大模型失败")
+        logger.exception("调用大模型失败 model=%s base_url=%s", llm_model, base_url)
         yield f"data: {json.dumps({'content': f'调用大模型发生错误：{str(e)}'}, ensure_ascii=False)}\n\n"
 
     yield "data: [DONE]\n\n"
 
 
 async def _maybe_auto_title(
-    db: AsyncSession, user_id: int, session_id: str, current_title: str | None,
+    db: AsyncSession, user_id: int, session_id: str,
+    current_title: str | None, provider_config: dict,
 ) -> str | None:
     """
     流结束后保底触发标题生成。
@@ -151,17 +155,18 @@ async def _maybe_auto_title(
     if current_title and not current_title.startswith("会话 ·"):
         return None
     try:
-        updated = await conversation_service.generate_title(db, user_id, UUID(session_id))
+        updated = await conversation_service.generate_title(
+            db, user_id, UUID(session_id), provider_config=provider_config,
+        )
         return updated.title
     except Exception:
-        # 消息不足或其他原因，静默忽略
         logger.debug("保底标题生成跳过 session_id=%s", session_id)
         return None
 
 
 async def _streaming_with_persistence(
     user_message: str, session_id: str, user_id: int, db: AsyncSession,
-    use_rag: bool, mode: str,
+    provider_config: dict, use_rag: bool, mode: str,
 ):
     """
     流式生成 + 落库 + 保底标题：
@@ -181,11 +186,11 @@ async def _streaming_with_persistence(
     # 3. 知识检索：只有用户显式开启 RAG 模式才检索
     knowledge = ""
     if use_rag:
-        knowledge = await _query_knowledge(user_message, mode)
+        knowledge = await _query_knowledge(user_id, provider_config, user_message, mode)
 
     # 4 & 5. 流式生成 + 收集完整回复
     full_reply_parts: list[str] = []
-    async for chunk in ai_response_generator(history, user_message, knowledge, use_rag):
+    async for chunk in ai_response_generator(history, user_message, provider_config, knowledge, use_rag):
         if chunk.startswith("data: ") and chunk.strip() != "data: [DONE]":
             data = chunk[6:].strip()
             try:
@@ -204,11 +209,16 @@ async def _streaming_with_persistence(
     # 6. 保底标题生成，并通过 SSE 把新标题推给前端
     try:
         session = await conversation_service.get_session(db, user_id, UUID(session_id))
-        new_title = await _maybe_auto_title(db, user_id, session_id, session.title)
+        new_title = await _maybe_auto_title(
+            db, user_id, session_id, session.title, provider_config,
+        )
         if new_title:
             yield f"data: {json.dumps({'title': new_title, 'session_id': session_id}, ensure_ascii=False)}\n\n"
     except Exception:
         logger.debug("读取会话标题失败，跳过保底生成 session_id=%s", session_id)
+
+
+@router.post("/stream")
 async def chat_streaming(
     request: Request,
     payload: dict,
@@ -221,6 +231,7 @@ async def chat_streaming(
     请求体：{ message, session_id?, use_rag?, mode? }
     - 无 session_id 时自动创建会话
     - 自动读取历史消息让 AI 记住上下文
+    - 供应商配置从 DB 动态读取（用户在设置页配置），无配置时兜底 .env
     - 默认集成 LightRAG 知识检索（可通过 use_rag=false 关闭）
     - 用户消息与 assistant 回复自动落库
     """
@@ -231,6 +242,14 @@ async def chat_streaming(
 
     if not message:
         return JSONResponse(status_code=422, content={"message": "消息不能为空"})
+
+    # 解析用户生效的供应商配置（DB 优先，env 兜底）
+    provider_config = await resolve_provider_config(db, user.id)
+    if not provider_config:
+        return JSONResponse(
+            status_code=400,
+            content={"message": "未配置 AI 供应商，请在设置页面添加供应商配置。"},
+        )
 
     # 无会话则自动创建
     if not session_id:
@@ -244,7 +263,9 @@ async def chat_streaming(
     # 透传 session_id 给前端（通过首个 SSE 事件）
     async def wrapped():
         yield f"data: {json.dumps({'session_id': session_id}, ensure_ascii=False)}\n\n"
-        async for chunk in _streaming_with_persistence(message, session_id, user.id, db, use_rag, mode):
+        async for chunk in _streaming_with_persistence(
+            message, session_id, user.id, db, provider_config, use_rag, mode,
+        ):
             yield chunk
 
     return StreamingResponse(wrapped(), media_type="text/event-stream")

@@ -4,6 +4,7 @@ export interface User {
   email: string
   email_verified: boolean
   created_at: string
+  last_login_ip?: string
 }
 
 export interface TokenResponse {

@@ -44,7 +44,7 @@ const {
           <span>{{ errorMsg }}</span>
         </div>
 
-        <el-form :ref="formRef" :model="form" :rules="rules" label-position="top" class="codesage-form" @submit.prevent="onSubmit">
+        <el-form :ref="(el: any) => { formRef = el }" :model="form" :rules="rules" label-position="top" class="codesage-form" @submit.prevent="onSubmit">
           <el-form-item label="邮箱" prop="email">
             <el-input v-model="form.email" type="email" placeholder="you@example.com" size="large" autocomplete="email" />
           </el-form-item>
@@ -68,7 +68,7 @@ const {
             type="button"
             :disabled="submitting"
             class="w-full h-12 mt-2 bg-[#111111] hover:bg-[#333333] text-white rounded-full flex items-center justify-center gap-2 transition-all duration-300 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed font-medium text-[14px]"
-            @click="onSubmit"
+            @click="console.log('[DEBUG] Button clicked!'); onSubmit()"
           >
             <span v-if="!submitting">登录</span>
             <span v-else class="flex items-center gap-2">

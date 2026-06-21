@@ -47,3 +47,13 @@ export function deleteDocument(docId: string) {
 export function queryKnowledge(question: string, mode: 'naive' | 'local' | 'global' | 'hybrid' = 'hybrid') {
   return request.post<RagQueryResult>('/rag/query', { question, mode }).then(r => r.data)
 }
+
+/** 上传文件到知识库（MD/TXT 文本内容） */
+export function uploadFile(payload: { filename: string; content: string; source?: string }) {
+  return request.post<FileUploadOut>('/rag/upload-file', payload).then(r => r.data)
+}
+
+export interface FileUploadOut {
+  success: boolean
+  message: string
+}

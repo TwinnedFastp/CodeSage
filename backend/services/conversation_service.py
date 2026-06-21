@@ -32,6 +32,7 @@ from backend.models.conversation import (
     UserPreference,
     UserTask,
 )
+from backend.sys_prompts import TITLE_GENERATOR_PROMPT
 from backend.utils.crypto import decrypt, encrypt
 
 logger = logging.getLogger(__name__)
@@ -109,12 +110,24 @@ async def delete_session(db: AsyncSession, user_id: int, session_id: UUID) -> No
         raise ConversationError("删除会话失败", status=500)
 
 
-async def generate_title(db: AsyncSession, user_id: int, session_id: UUID) -> ChatSession:
+async def generate_title(
+    db: AsyncSession, user_id: int, session_id: UUID,
+    provider_config: dict | None = None,
+) -> ChatSession:
     """
     根据会话前几条消息调用 LLM 生成简短标题，并更新到数据库。
+
+    provider_config: 用户的供应商配置（含 api_key / base_url / model）。
+    若为 None，则从 DB 解析用户生效配置（DB 优先，env 兜底）。
     """
     from openai import AsyncOpenAI
-    from backend.core.config import settings
+
+    # 未传入配置时，从 DB 解析用户生效配置
+    if provider_config is None:
+        from backend.services.provider_service import resolve_provider_config
+        provider_config = await resolve_provider_config(db, user_id)
+        if not provider_config:
+            raise ConversationError("未配置 AI 供应商，无法生成标题", status=400)
 
     msgs = await list_messages(db, user_id, session_id, limit=4, offset=0)
     if len(msgs) < 2:
@@ -127,16 +140,13 @@ async def generate_title(db: AsyncSession, user_id: int, session_id: UUID) -> Ch
 
     try:
         ai_client = AsyncOpenAI(
-            api_key=settings.lightrag_api_key,
-            base_url=settings.lightrag_base_url,
+            api_key=provider_config["llm_api_key"],
+            base_url=provider_config["llm_base_url"],
         )
         response = await ai_client.chat.completions.create(
-            model=settings.LLM_MODEL,
+            model=provider_config["llm_model"],
             messages=[
-                {"role": "system", "content": (
-                    "你是一个会话标题生成器。根据用户与AI的对话内容，生成一个简洁、有概括性的中文标题。"
-                    "要求：1）不超过15个汉字 2）不要加标点符号 3）直接输出标题，不要解释或引号包裹"
-                )},
+                {"role": "system", "content": TITLE_GENERATOR_PROMPT},
                 {"role": "user", "content": f"请为以下对话生成一个简短标题：\n\n{conversation_text}"},
             ],
             max_tokens=30,

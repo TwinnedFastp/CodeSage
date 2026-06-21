@@ -45,19 +45,38 @@ export function useLoginForm() {
   }
 
   async function onSubmit() {
+    console.log('[Login] onSubmit triggered, submitting:', submitting.value)
+
     // 防重入：避免 click + submit 双重触发
-    if (submitting.value) return
+    if (submitting.value) {
+      console.log('[Login] 已在提交中，跳过')
+      return
+    }
     errorMsg.value = ''
-    if (!formRef.value) return
+
+    if (!formRef.value) {
+      console.error('[Login] formRef 不存在!')
+      return
+    }
 
     // 前端预校验
-    const valid = await formRef.value.validate().catch(() => false)
-    if (!valid) return
+    console.log('[Login] 开始表单验证...')
+    const valid = await formRef.value.validate().catch((err) => {
+      console.warn('[Login] 表单验证失败:', err)
+      return false
+    })
+    if (!valid) {
+      console.log('[Login] 验证未通过，终止提交')
+      return
+    }
+
     if (!captchaVerified.value) {
+      console.log('[Login] 验证码未通过, captchaVerified:', captchaVerified.value)
       ElMessage.warning('请先完成拼图验证')
       return
     }
 
+    console.log('[Login] 开始提交登录请求...', { email: form.email.trim() })
     submitting.value = true
     try {
       await auth.login(form.email.trim(), form.password)

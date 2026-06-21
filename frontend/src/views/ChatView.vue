@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
   ChatDotRound, Operation, Plus, User as UserIcon, Monitor, Setting,
-  Fold, Expand, Promotion, SwitchButton, Edit, Collection, Files,
+  Fold, Expand, Promotion, SwitchButton, Edit, Collection, Files, Cpu,
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useResponsive } from '@/composables/useResponsive'
@@ -44,7 +44,7 @@ const {
 const {
   ragReady, ragMode, ragActive,
   documents, loadingDocs, uploading, knowledgePanelVisible,
-  loadDocuments, uploadDocument, removeDocument, openKnowledgePanel,
+  loadDocuments, uploadDocument, uploadFile, removeDocument, openKnowledgePanel,
 } = useRag()
 
 // ---- 初始化 ----
@@ -66,6 +66,11 @@ async function onLogout() {
   await auth.logout()
   ElMessage.success('已登出')
   router.push('/login')
+}
+
+function goToSettings() {
+  userMenuVisible.value = false
+  router.push('/settings')
 }
 
 const maskedEmail = computed(() => {
@@ -195,6 +200,9 @@ const ragModeOptions = [
         </div>
         <transition enter-active-class="transition duration-200 ease-out" enter-from-class="opacity-0 translate-y-1" enter-to-class="opacity-100 translate-y-0" leave-active-class="transition duration-150 ease-in" leave-from-class="opacity-100" leave-to-class="opacity-0">
           <div v-if="userMenuVisible" class="absolute bottom-full left-5 right-5 mb-2 bg-white rounded-2xl border border-[#E8E6E1] shadow-[0_8px_30px_rgb(0,0,0,0.08)] py-2 overflow-hidden">
+            <button class="w-full px-4 py-2.5 text-left text-[13px] text-[#444444] hover:bg-[#F3F2EE] flex items-center gap-2.5 transition-colors" @click="goToSettings">
+              <el-icon :size="15"><Cpu /></el-icon><span>模型供应商设置</span>
+            </button>
             <button class="w-full px-4 py-2.5 text-left text-[13px] text-[#444444] hover:bg-[#F3F2EE] flex items-center gap-2.5 transition-colors" @click="onLogout">
               <el-icon :size="15"><SwitchButton /></el-icon><span>退出登录</span>
             </button>
@@ -230,7 +238,10 @@ const ragModeOptions = [
             </template>
           </div>
         </div>
-        <div class="pt-4 border-t border-[#E8E6E1]/50">
+        <div class="pt-4 border-t border-[#E8E6E1]/50 space-y-1">
+          <button class="w-full flex items-center gap-3 px-2 py-2 text-[13px] text-[#444444] hover:text-[#111111]" @click="router.push('/settings')">
+            <el-icon :size="16"><Cpu /></el-icon><span>模型供应商设置</span>
+          </button>
           <button class="w-full flex items-center gap-3 px-2 py-2 text-[13px] text-[#444444] hover:text-[#111111]" @click="onLogout">
             <el-icon :size="16"><SwitchButton /></el-icon><span>退出登录 ({{ maskedEmail }})</span>
           </button>
@@ -327,6 +338,7 @@ const ragModeOptions = [
       :loading-docs="loadingDocs"
       :uploading="uploading"
       @upload="uploadDocument"
+      @upload-file="uploadFile"
       @remove="removeDocument"
       @refresh="loadDocuments"
     />

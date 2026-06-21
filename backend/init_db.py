@@ -17,7 +17,7 @@ from sqlalchemy import text
 
 from backend.db.session import engine
 # 导入全部模型，触发 Base.metadata 注册
-from backend.models import Base, User, LoginLog, ChatSession, ChatMessage, UserPreference, UserFact, UserTask  # noqa: F401
+from backend.models import Base, User, LoginLog, ChatSession, ChatMessage, UserPreference, UserFact, UserTask, AIProvider  # noqa: F401
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("init_db")

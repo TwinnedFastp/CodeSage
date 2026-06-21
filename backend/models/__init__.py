@@ -10,6 +10,7 @@ from backend.models.conversation import (
     UserFact,
     UserTask,
 )
+from backend.models.provider import AIProvider
 
 __all__ = [
     "Base",
@@ -20,4 +21,5 @@ __all__ = [
     "UserPreference",
     "UserFact",
     "UserTask",
+    "AIProvider",
 ]
