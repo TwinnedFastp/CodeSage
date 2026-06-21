@@ -65,15 +65,8 @@ services:
       - SMTP_PASSWORD=${SMTP_PASSWORD:-}
       - SMTP_FROM=${SMTP_FROM:-}
       - VERIFY_EMAIL_BASE_URL=${VERIFY_EMAIL_BASE_URL:-http://localhost:80}
-      - LLM_API_KEY=${LLM_API_KEY:-}
-      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY:-}
-      - LLM_BASE_URL=${LLM_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
-      - LLM_MODEL=${LLM_MODEL:-qwen-plus}
-      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-v4}
-      - EMBEDDING_DIM=${EMBEDDING_DIM:-1024}
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
-      # LightRAG 配置
+      # LightRAG 系统级配置（AI 模型供应商配置已迁移至数据库 ai_providers 表，
+      # 通过前端「设置 → 模型供应商」页面管理，无需在此配置 LLM 相关项）
       - LIGHTRAG_ENABLED=${LIGHTRAG_ENABLED:-true}
       - LIGHTRAG_WORKING_DIR=${LIGHTRAG_WORKING_DIR:-data/lightrag}
       # LightRAG Postgres 存储后端配置（与项目数据库共用）

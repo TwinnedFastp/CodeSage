@@ -118,7 +118,7 @@ async def generate_title(
     根据会话前几条消息调用 LLM 生成简短标题，并更新到数据库。
 
     provider_config: 用户的供应商配置（含 api_key / base_url / model）。
-    若为 None，则从 DB 解析用户生效配置（DB 优先，env 兜底）。
+    若为 None，则从 DB 解析用户生效配置（ai_providers 表）。
     """
     from openai import AsyncOpenAI
 

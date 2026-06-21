@@ -205,15 +205,14 @@ async def get_active_provider_config(db: AsyncSession, user_id: int) -> dict | N
 
 async def resolve_provider_config(db: AsyncSession, user_id: int) -> dict | None:
     """
-    解析用户生效的供应商配置（DB 优先，env 兜底）
+    解析用户生效的供应商配置（唯一配置源：数据库 ai_providers 表）
 
-    优先级：
-    1. 用户在 DB 中启用的供应商配置（is_enabled=True，最近更新优先）
-    2. .env 环境变量配置（LLM_API_KEY / LLM_BASE_URL / LLM_MODEL 等）
+    优先返回 is_enabled=True 的记录（最近更新优先）。
+    无启用配置时返回 None（调用方应提示用户前往设置页配置供应商）。
 
-    返回 None 表示既无 DB 配置也无 env 配置（无法调用 LLM）。
     返回字典结构：{
-        "source": "db" | "env",
+        "source": "db",
+        "provider_name": str,
         "llm_api_key": str,
         "llm_base_url": str,
         "llm_model": str,
@@ -221,7 +220,6 @@ async def resolve_provider_config(db: AsyncSession, user_id: int) -> dict | None
         "embedding_dim": int,
     }
     """
-    # 1. 尝试从 DB 读取
     db_config = await get_active_provider_config(db, user_id)
     if db_config:
         return {
@@ -233,18 +231,4 @@ async def resolve_provider_config(db: AsyncSession, user_id: int) -> dict | None
             "embedding_model": db_config["embedding_model"],
             "embedding_dim": db_config["embedding_dim"],
         }
-
-    # 2. 兜底：从环境变量读取
-    from backend.core.config import settings
-    if settings.lightrag_api_key:
-        return {
-            "source": "env",
-            "provider_name": "env-default",
-            "llm_api_key": settings.lightrag_api_key,
-            "llm_base_url": settings.lightrag_base_url,
-            "llm_model": settings.LLM_MODEL,
-            "embedding_model": settings.EMBEDDING_MODEL,
-            "embedding_dim": settings.EMBEDDING_DIM,
-        }
-
     return None

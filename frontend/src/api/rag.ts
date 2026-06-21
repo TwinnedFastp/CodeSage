@@ -14,7 +14,7 @@ export interface RagDocument {
 
 export interface RagStatus {
   enabled: boolean
-  has_api_key: boolean
+  has_provider_config: boolean
   ready: boolean
 }
 

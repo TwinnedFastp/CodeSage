@@ -48,7 +48,7 @@ async def rag_status(
     """
     检查 LightRAG 知识库是否可用（前端用来决定是否显示 RAG 开关）。
 
-    判断逻辑：LIGHTRAG_ENABLED 开启 + 用户有可用供应商配置（DB 或 env）。
+    判断逻辑：LIGHTRAG_ENABLED 开启 + 用户已在设置页配置并启用供应商。
     """
     from backend.core.config import settings
     config = await resolve_provider_config(db, user.id)
@@ -56,7 +56,6 @@ async def rag_status(
     return {
         "enabled": settings.LIGHTRAG_ENABLED,
         "has_provider_config": has_config,
-        "config_source": config.get("source", "") if config else "",
         "ready": settings.LIGHTRAG_ENABLED and has_config,
     }
 

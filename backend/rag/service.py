@@ -13,7 +13,7 @@ LightRAG 服务封装（Postgres + pgvector + NetworkX 混合存储后端）
    - graph_storage = NetworkXStorage   → 本地文件（.pkl，无需 AGE 扩展）
    - doc_status_storage = PGDocStatusStorage → Postgres
 4. Postgres 连接通过环境变量配置（POSTGRES_HOST / POSTGRES_PORT / 等）
-5. 供应商配置来源：DB（用户在设置页配置）优先，.env 环境变量兜底
+5. 供应商配置来源：数据库 ai_providers 表（用户在设置页配置并启用）
 6. 缓存失效：用户增删改供应商配置后，调用 invalidate_user(uid) 清除缓存
 """
 import asyncio

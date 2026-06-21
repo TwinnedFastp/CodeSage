@@ -243,7 +243,7 @@ async def chat_streaming(
     if not message:
         return JSONResponse(status_code=422, content={"message": "消息不能为空"})
 
-    # 解析用户生效的供应商配置（DB 优先，env 兜底）
+    # 解析用户生效的供应商配置（唯一来源：数据库 ai_providers 表）
     provider_config = await resolve_provider_config(db, user.id)
     if not provider_config:
         return JSONResponse(
