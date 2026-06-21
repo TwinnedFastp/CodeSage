@@ -18,6 +18,7 @@ dist-ssr
 # IDE
 .vscode/
 .idea/
+.trae/
 *.swp
 *.swo
 
@@ -35,6 +36,12 @@ docker_data/redis/data/
 
 # 本地学习日志（self-improvement skill，按其默认建议保持本地）
 .learnings/
+
+# WorkBuddy 工具本地状态（记忆、任务等，不纳入项目仓库）
+.workbuddy/
+
+# 任务总结文档（WorkBuddy artifact，本地保留即可）
+overview.md
 
 # 临时压测结果文件
 backend/tests/stress_result.txt
