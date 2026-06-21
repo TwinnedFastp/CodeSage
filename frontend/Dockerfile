@@ -20,6 +20,9 @@ FROM nginx:alpine-slim AS production-stage
 # 将构建好的静态文件复制到 Nginx 目录
 COPY --from=build-stage /app/dist /usr/share/nginx/html
 
+# 覆盖默认 nginx 配置：增加 /api 反向代理到 backend + SSE 流式支持
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
 # 暴露 80 端口
 EXPOSE 80
 

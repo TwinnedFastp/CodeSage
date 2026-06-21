@@ -1,7 +1,10 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from backend.api.v1.api import api_router
 from backend.core.config import settings
+from backend.services.auth_service import AuthError
+from backend.services.conversation_service import ConversationError
 
 # --- 初始化 FastAPI 应用 ---
 # title: 自动生成的 API 文档标题
@@ -10,6 +13,17 @@ app = FastAPI(
     title=settings.PROJECT_NAME,
     openapi_url=f"{settings.API_V1_STR}/openapi.json"
 )
+
+# --- 全局异常处理器 ---
+# 把业务层抛出的自定义异常统一转换为 JSON 响应，避免 500 泄露堆栈
+@app.exception_handler(AuthError)
+async def auth_error_handler(request: Request, exc: AuthError):
+    return JSONResponse(status_code=exc.status, content={"code": exc.code, "message": exc.message})
+
+
+@app.exception_handler(ConversationError)
+async def conversation_error_handler(request: Request, exc: ConversationError):
+    return JSONResponse(status_code=exc.status, content={"message": exc.message})
 
 # --- 配置跨域资源共享 (CORS) ---
 # 这非常重要，否则前端 (localhost:5173) 无法请求后端 (localhost:8000)
