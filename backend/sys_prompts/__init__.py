@@ -24,4 +24,7 @@ CHAT_SYSTEM_PROMPT: str = _load("chat_system.md")
 # 标题生成器提示词（会话服务使用）
 TITLE_GENERATOR_PROMPT: str = _load("title_generator.md")
 
-__all__ = ["CHAT_SYSTEM_PROMPT", "TITLE_GENERATOR_PROMPT"]
+# 组件协议生成器提示词（界面生成接口使用）
+COMPONENT_PROTOCOL_PROMPT: str = _load("component_protocol.md")
+
+__all__ = ["CHAT_SYSTEM_PROMPT", "TITLE_GENERATOR_PROMPT", "COMPONENT_PROTOCOL_PROMPT"]
