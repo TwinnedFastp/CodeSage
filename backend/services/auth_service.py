@@ -10,9 +10,16 @@
 """
 from __future__ import annotations
 
+import asyncio
 import logging
+import re
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+
+import boto3
+from botocore.client import Config as BotoConfig
+from botocore.exceptions import ClientError
 
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
@@ -54,7 +61,16 @@ class AuthError(Exception):
 # ------------------------------------------------------------------
 # 注册
 # ------------------------------------------------------------------
-async def register(email: str, password: str, db: AsyncSession) -> tuple[User, Optional[str]]:
+def normalize_username(username: Optional[str], email: str) -> str:
+    value = (username or email.split("@", 1)[0]).strip()
+    value = re.sub(r"[\x00-\x1f\x7f]+", "", value)
+    value = re.sub(r"\s+", " ", value)
+    if len(value) < 2:
+        value = email.split("@", 1)[0]
+    return value[:64]
+
+
+async def register(email: str, password: str, db: AsyncSession, username: Optional[str] = None) -> tuple[User, Optional[str]]:
     """
     注册新用户。
     返回 (user, verify_link_or_none)。verify_link 仅开发模式回传。
@@ -79,6 +95,7 @@ async def register(email: str, password: str, db: AsyncSession) -> tuple[User, O
     verify_token, expires_at = generate_verification_token()
     user = User(
         email=email,
+        username=normalize_username(username, email),
         password_hash=hash_password(password),
         email_verified=False,
         verification_token=verify_token,
@@ -95,15 +112,17 @@ async def register(email: str, password: str, db: AsyncSession) -> tuple[User, O
         logger.exception("注册写库失败")
         raise AuthError("注册失败，请稍后重试", code="db_error", status=500)
     await db.refresh(user)
+    if not user.avatar_url:
+        user.avatar_url = _default_avatar_url(user.id)
+        await db.commit()
+        await db.refresh(user)
 
     # 5. 发送验证邮件
     try:
         link = await email_service.send_verification_email(user.email, verify_token)
-    except RuntimeError as exc:
-        # 邮件发送失败不影响账号创建，用户可稍后请求重发
+    except RuntimeError:
         logger.warning("注册成功但验证邮件发送失败 user_id=%s", user.id)
         link = None
-        raise AuthError(str(exc), code="email_send_failed", status=503)
 
     return user, link
 
@@ -253,6 +272,98 @@ async def login(email: str, password: str, client_ip: Optional[str], db: AsyncSe
         "expires_in": settings.ACCESS_TOKEN_EXPIRE_DAYS * 86400,
         "user": user,
     }
+
+
+def _sanitize_avatar_filename(filename: str) -> str:
+    name = filename.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+    name = re.sub(r"[^A-Za-z0-9._-]+", "-", name).strip(".-_")
+    return name or "avatar"
+
+
+def _get_s3_client():
+    if not settings.S3_ENABLED or not settings.S3_ENDPOINT_URL or not settings.S3_ACCESS_KEY_ID or not settings.S3_SECRET_ACCESS_KEY:
+        raise AuthError("头像存储未启用", code="s3_disabled", status=503)
+    return boto3.client(
+        "s3",
+        endpoint_url=settings.S3_ENDPOINT_URL,
+        aws_access_key_id=settings.S3_ACCESS_KEY_ID,
+        aws_secret_access_key=settings.S3_SECRET_ACCESS_KEY,
+        region_name=settings.S3_REGION,
+        use_ssl=settings.S3_USE_SSL,
+        config=BotoConfig(signature_version="s3v4"),
+    )
+
+
+def _build_avatar_public_url(object_key: str) -> str:
+    base = settings.S3_PUBLIC_BASE_URL.rstrip("/")
+    if base:
+        return f"{base}/{settings.S3_BUCKET_AVATARS}/{object_key}"
+    return object_key
+
+
+def _default_avatar_url(user_id: int) -> str:
+    seed = f"{user_id}-{settings.PROJECT_NAME}"
+    return f"https://api.dicebear.com/7.x/initials/svg?seed={seed}"
+
+
+# ------------------------------------------------------------------
+# 用户资料
+# ------------------------------------------------------------------
+async def update_profile(user: User, username: str, db: AsyncSession) -> User:
+    normalized = normalize_username(username, user.email)
+    if not normalized:
+        raise AuthError("用户名不能为空", code="invalid_username", status=422)
+
+    user.username = normalized
+    try:
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        logger.exception("更新用户资料失败 user_id=%s", user.id)
+        raise AuthError("保存失败，请稍后重试", code="db_error", status=500)
+    await db.refresh(user)
+    return user
+
+
+async def issue_avatar_upload(user: User, filename: str, content_type: str) -> dict:
+    object_key = f"avatars/{user.id}/{uuid.uuid4().hex}-{_sanitize_avatar_filename(filename)}"
+    client = _get_s3_client()
+    try:
+        upload_url = await asyncio.to_thread(
+            client.generate_presigned_url,
+            ClientMethod="put_object",
+            Params={
+                "Bucket": settings.S3_BUCKET_AVATARS,
+                "Key": object_key,
+                "ContentType": content_type,
+            },
+            ExpiresIn=settings.S3_PRESIGN_EXPIRE_SECONDS,
+        )
+    except ClientError as exc:
+        logger.exception("生成头像上传链接失败 user_id=%s", user.id)
+        raise AuthError("生成头像上传链接失败", code="s3_error", status=502) from exc
+
+    return {
+        "upload_url": upload_url,
+        "object_key": object_key,
+        "public_url": _build_avatar_public_url(object_key),
+        "expires_in": settings.S3_PRESIGN_EXPIRE_SECONDS,
+    }
+
+
+async def commit_avatar(user: User, object_key: str, avatar_url: str, db: AsyncSession) -> User:
+    if not object_key.startswith(f"avatars/{user.id}/"):
+        raise AuthError("头像对象不属于当前用户", code="invalid_avatar", status=403)
+    user.avatar_object_key = object_key
+    user.avatar_url = avatar_url
+    try:
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        logger.exception("更新头像失败 user_id=%s", user.id)
+        raise AuthError("头像保存失败，请稍后重试", code="db_error", status=500)
+    await db.refresh(user)
+    return user
 
 
 # ------------------------------------------------------------------

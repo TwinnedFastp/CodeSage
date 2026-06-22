@@ -56,5 +56,30 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  return { user, accessToken, refreshToken, loading, isLoggedIn, login, logout, fetchMe, setTokens, clearTokens }
+  async function updateProfile(username: string) {
+    if (!user.value) return
+    user.value = await authApi.updateMe({ username })
+  }
+
+  async function uploadAvatar(file: File) {
+    if (!user.value) return
+    const upload = await authApi.createAvatarUpload({
+      filename: file.name,
+      content_type: file.type || 'image/png',
+    })
+    const resp = await fetch(upload.upload_url, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': file.type || 'image/png',
+      },
+      body: file,
+    })
+    if (!resp.ok) throw new Error('头像上传失败')
+    user.value = await authApi.commitAvatar({
+      object_key: upload.object_key,
+      avatar_url: upload.public_url,
+    })
+  }
+
+  return { user, accessToken, refreshToken, loading, isLoggedIn, login, logout, fetchMe, setTokens, clearTokens, updateProfile, uploadAvatar }
 })

@@ -20,4 +20,5 @@ redis
 email-validator
 cryptography
 aiosmtplib
+boto3
 python-multipart

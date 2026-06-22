@@ -20,6 +20,7 @@ RUN apt-get update && apt-get install -y \
     make \
     libpq-dev \
     git \
+    wget \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # 4. 升级 pip 并安装后端依赖
@@ -28,13 +29,16 @@ COPY requirements.txt .
 RUN pip3 install --no-cache-dir --upgrade pip -i https://mirrors.aliyun.com/pypi/simple/ && \
     pip3 install --no-cache-dir -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/
 
-# 5. 复制项目源代码到镜像中
+# 5. tiktoken 编码文件由代码层自动处理（rag/service.py 中 monkey-patch 降级方案）
+#    无需在构建时预下载（国内网络无法访问 Azure Blob Storage）
+
+# 6. 复制项目源代码到镜像中
 # 注意：代码里使用了 from backend.xxx import ... 这种包路径，
 # 所以镜像内也要保留 /app/backend 这一层目录。
 COPY . ./backend
 
-# 6. 暴露容器内部的 8000 端口
+# 7. 暴露容器内部的 8000 端口
 EXPOSE 8000
 
-# 7. 启动 FastAPI 服务
+# 8. 启动 FastAPI 服务
 CMD ["python3", "-m", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -56,9 +56,12 @@ const {
             <span>{{ errorMsg }}</span>
           </div>
 
-          <el-form :ref="formRef" :model="form" :rules="rules" label-position="top" class="codesage-form" @submit.prevent>
+          <el-form :ref="(el: any) => { formRef = el }" :model="form" :rules="rules" label-position="top" class="codesage-form" @submit.prevent="onSubmit">
             <el-form-item label="邮箱" prop="email">
               <el-input v-model="form.email" type="email" placeholder="you@example.com" size="large" autocomplete="email" />
+            </el-form-item>
+            <el-form-item label="用户名" prop="username">
+              <el-input v-model="form.username" type="text" placeholder="你的显示名称" size="large" autocomplete="username" />
             </el-form-item>
             <el-form-item label="密码" prop="password">
               <el-input v-model="form.password" type="password" placeholder="至少 8 位，含大小写/数字/特殊字符" size="large" show-password autocomplete="new-password" />

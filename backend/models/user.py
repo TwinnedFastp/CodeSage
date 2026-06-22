@@ -28,6 +28,9 @@ class User(Base):
 
     id = Column(BigInteger, primary_key=True, index=True)
     email = Column(String(254), unique=True, index=True, nullable=False)
+    username = Column(String(64), nullable=False)
+    avatar_url = Column(String(1024), nullable=True)
+    avatar_object_key = Column(String(512), nullable=True)
     password_hash = Column(String(128), nullable=False)
 
     # 邮箱验证

@@ -64,6 +64,7 @@ async def send_verification_email(to_email: str, token: str) -> Optional[str]:
             password=settings.SMTP_PASSWORD,
             start_tls=settings.SMTP_PORT == 587,
             use_tls=settings.SMTP_PORT == 465,
+            timeout=settings.SMTP_TIMEOUT_SECONDS,
         )
         logger.info("验证邮件已发送至 %s", to_email)
         return None
