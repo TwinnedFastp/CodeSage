@@ -3,15 +3,21 @@ import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
-  ArrowLeft, Plus, User as UserIcon, Cpu, Edit, Delete,
+  ArrowLeft, Plus, User as UserIcon, Cpu,
   Check, View, Hide, Star,
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useProviders } from '@/composables/useProviders'
+import { useResponsive } from '@/composables/useResponsive'
 import type { Provider } from '@/api/providers'
+// 复用供应商卡片组件：分离展示逻辑 + hover 阴影上浮效果
+import ProviderCard from '@/components/ProviderCard.vue'
 
 const router = useRouter()
 const auth = useAuthStore()
+
+// 移动端检测：用于侧栏改顶栏 / 弹窗宽度 / 内边距适配
+const { isMobile } = useResponsive()
 
 const {
   providers, loading, saving, presets,
@@ -126,10 +132,10 @@ const maskedEmail = computed(() => {
 </script>
 
 <template>
-  <div class="flex h-screen w-screen bg-[#FAFAFA] text-[#111111] overflow-hidden antialiased font-sans">
+  <div class="flex flex-col md:flex-row h-screen w-screen bg-[#FAFAFA] text-[#111111] overflow-hidden antialiased font-sans">
 
-    <!-- 左侧导航 -->
-    <aside class="w-[280px] bg-[#F3F2EE] flex flex-col shrink-0">
+    <!-- 左侧导航（桌面端） -->
+    <aside v-if="!isMobile" class="w-[280px] bg-[#F3F2EE] flex flex-col shrink-0">
       <div class="p-6 flex items-center justify-between h-20">
         <button @click="router.push('/chat')" class="flex items-center gap-2 text-[13px] text-[#777] hover:text-[#111] transition-colors">
           <el-icon :size="16"><ArrowLeft /></el-icon>
@@ -176,9 +182,39 @@ const maskedEmail = computed(() => {
       </div>
     </aside>
 
+    <!-- 顶部导航（移动端）：返回 + 标签切换 -->
+    <header v-else class="shrink-0 bg-[#F3F2EE] border-b border-[#E8E6E1]/60">
+      <div class="flex items-center justify-between px-4 h-14">
+        <button @click="router.push('/chat')" class="flex items-center gap-1.5 text-[13px] text-[#777] hover:text-[#111] transition-colors">
+          <el-icon :size="16"><ArrowLeft /></el-icon>
+          <span>返回</span>
+        </button>
+        <h1 class="font-serif text-lg tracking-tight text-[#111]">设置</h1>
+        <button @click="onLogout" class="text-[12px] text-[#777] hover:text-[#111] transition-colors">退出</button>
+      </div>
+      <!-- 顶部标签条 -->
+      <nav class="flex px-2 pb-2 gap-1">
+        <button
+          @click="activeTab = 'account'"
+          :class="['flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg transition-all text-[13px]', activeTab === 'account' ? 'bg-white text-[#111] font-medium shadow-sm' : 'text-[#666]']"
+        >
+          <el-icon :size="15"><UserIcon /></el-icon>
+          <span>账户</span>
+        </button>
+        <button
+          @click="activeTab = 'providers'"
+          :class="['flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg transition-all text-[13px]', activeTab === 'providers' ? 'bg-white text-[#111] font-medium shadow-sm' : 'text-[#666]']"
+        >
+          <el-icon :size="15"><Cpu /></el-icon>
+          <span>供应商</span>
+          <span v-if="providers.length > 0" class="text-[10px] px-1.5 py-0.5 rounded-full bg-[#E8E6E1] text-[#666]">{{ providers.length }}</span>
+        </button>
+      </nav>
+    </header>
+
     <!-- 主内容区 -->
     <main class="flex-1 overflow-y-auto custom-scrollbar">
-      <div class="max-w-3xl mx-auto px-8 py-12">
+      <div class="max-w-3xl mx-auto px-4 py-6 sm:px-8 sm:py-12">
 
         <!-- 账户信息 -->
         <div v-if="activeTab === 'account'" class="animate-fade-in-up">
@@ -219,17 +255,18 @@ const maskedEmail = computed(() => {
 
         <!-- 模型供应商 -->
         <div v-else class="animate-fade-in-up">
-          <div class="flex items-start justify-between mb-2">
-            <div>
-              <h2 class="font-serif text-3xl tracking-tight">模型供应商</h2>
-              <p class="text-[13px] text-[#999] mt-1">配置你的 AI 模型供应商，支持添加多个并切换启用</p>
+          <div class="flex items-start justify-between gap-3 mb-2">
+            <div class="min-w-0">
+              <h2 class="font-serif text-2xl sm:text-3xl tracking-tight">模型供应商</h2>
+              <p class="text-[12px] sm:text-[13px] text-[#999] mt-1">配置你的 AI 模型供应商，支持添加多个并切换启用</p>
             </div>
+            <!-- 添加按钮：移动端仅图标 + 较窄内边距，桌面端带文字 -->
             <button
               @click="openCreateDialog"
-              class="shrink-0 flex items-center gap-2 px-5 py-2.5 bg-[#111] text-white rounded-full text-[13px] font-medium hover:bg-[#333] transition-all shadow-sm hover:shadow-md"
+              class="shrink-0 flex items-center gap-2 px-4 sm:px-5 py-2 sm:py-2.5 bg-[#111] text-white rounded-full text-[13px] font-medium hover:bg-[#333] transition-all shadow-sm hover:shadow-md"
             >
               <el-icon :size="15"><Plus /></el-icon>
-              <span>添加供应商</span>
+              <span class="hidden sm:inline">添加供应商</span>
             </button>
           </div>
 
@@ -260,78 +297,16 @@ const maskedEmail = computed(() => {
             </button>
           </div>
 
+          <!-- 供应商卡片列表：复用 ProviderCard 组件，hover 上浮阴影 + 移动端单列详情 -->
           <div v-else class="space-y-4">
-            <div
+            <ProviderCard
               v-for="p in providers"
               :key="p.id"
-              :class="['group relative bg-white rounded-2xl border transition-all duration-300 overflow-hidden', p.is_enabled ? 'border-[#111] shadow-[0_4px_20px_rgb(0,0,0,0.06)]' : 'border-[#E8E6E1] hover:border-[#D1CFCA]']"
-            >
-              <!-- 启用标识条 -->
-              <div v-if="p.is_enabled" class="absolute top-0 left-0 right-0 h-[3px] bg-[#111]"></div>
-
-              <div class="p-6 pt-7">
-                <div class="flex items-start justify-between mb-5">
-                  <div class="flex items-center gap-3">
-                    <div :class="['w-11 h-11 rounded-xl flex items-center justify-center transition-colors', p.is_enabled ? 'bg-[#111] text-white' : 'bg-[#F3F2EE] text-[#999]']">
-                      <el-icon :size="20"><Cpu /></el-icon>
-                    </div>
-                    <div>
-                      <div class="flex items-center gap-2">
-                        <h3 class="text-[16px] font-semibold tracking-tight">{{ p.provider_name }}</h3>
-                        <span v-if="p.is_enabled" class="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-[#E8F5E9] text-[#2E7D32] font-medium">
-                          <el-icon :size="9"><Check /></el-icon> 使用中
-                        </span>
-                      </div>
-                      <p class="text-[11px] text-[#999] mt-0.5 font-mono truncate max-w-[300px]">{{ p.llm_base_url }}</p>
-                    </div>
-                  </div>
-
-                  <!-- 启用/禁用开关 -->
-                  <button
-                    @click="onToggle(p)"
-                    :class="['relative w-11 h-6 rounded-full transition-colors duration-300', p.is_enabled ? 'bg-[#111]' : 'bg-[#D1CFCA]']"
-                  >
-                    <span :class="['absolute top-0.5 w-5 h-5 rounded-full bg-white shadow-sm transition-all duration-300', p.is_enabled ? 'left-[22px]' : 'left-0.5']"></span>
-                  </button>
-                </div>
-
-                <!-- 配置详情 -->
-                <div class="grid grid-cols-2 gap-x-6 gap-y-3 pt-4 border-t border-[#F3F2EE]">
-                  <div>
-                    <p class="text-[10px] text-[#999] uppercase tracking-wider mb-1">LLM 模型</p>
-                    <p class="text-[13px] font-mono text-[#333]">{{ p.llm_model }}</p>
-                  </div>
-                  <div>
-                    <p class="text-[10px] text-[#999] uppercase tracking-wider mb-1">Embedding 模型</p>
-                    <p class="text-[13px] font-mono text-[#333]">{{ p.embedding_model }}</p>
-                  </div>
-                  <div>
-                    <p class="text-[10px] text-[#999] uppercase tracking-wider mb-1">API Key</p>
-                    <p class="text-[13px] font-mono text-[#333]">{{ p.llm_api_key }}</p>
-                  </div>
-                  <div>
-                    <p class="text-[10px] text-[#999] uppercase tracking-wider mb-1">向量维度</p>
-                    <p class="text-[13px] font-mono text-[#333]">{{ p.embedding_dim }} dim</p>
-                  </div>
-                </div>
-
-                <!-- 操作按钮 -->
-                <div class="flex items-center justify-end gap-2 mt-5 pt-4 border-t border-[#F3F2EE]">
-                  <button
-                    @click="openEditDialog(p)"
-                    class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] text-[#666] hover:text-[#111] hover:bg-[#F3F2EE] transition-colors"
-                  >
-                    <el-icon :size="13"><Edit /></el-icon><span>编辑</span>
-                  </button>
-                  <button
-                    @click="onDelete(p)"
-                    class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] text-[#666] hover:text-[#D32F2F] hover:bg-[#FFEBEE] transition-colors"
-                  >
-                    <el-icon :size="13"><Delete /></el-icon><span>删除</span>
-                  </button>
-                </div>
-              </div>
-            </div>
+              :provider="p"
+              @toggle="onToggle"
+              @edit="openEditDialog"
+              @delete="onDelete"
+            />
           </div>
         </div>
 
@@ -342,7 +317,7 @@ const maskedEmail = computed(() => {
     <el-dialog
       v-model="dialogVisible"
       :title="dialogTitle"
-      width="560px"
+      :width="isMobile ? '92%' : '560px'"
       class="provider-dialog"
       :close-on-click-modal="false"
     >
@@ -407,8 +382,8 @@ const maskedEmail = computed(() => {
           />
         </div>
 
-        <!-- 双列：LLM 模型 + Embedding 模型 -->
-        <div class="grid grid-cols-2 gap-4">
+        <!-- 双列：LLM 模型 + Embedding 模型（移动端单列） -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label class="block text-[12px] text-[#999] uppercase tracking-wider mb-2">LLM 模型</label>
             <input
