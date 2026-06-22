@@ -46,7 +46,7 @@ const {
 const {
   ragReady, ragMode, ragActive,
   documents, loadingDocs, uploading, knowledgePanelVisible,
-  loadDocuments, uploadDocument, uploadFile, removeDocument, openKnowledgePanel,
+  loadDocuments, uploadDocument, uploadFile, removeDocument, resetKnowledge, openKnowledgePanel,
 } = useRag()
 
 // ---- 初始化 ----
@@ -329,6 +329,7 @@ const ragModeOptions = [
       @upload-file="uploadFile"
       @remove="removeDocument"
       @refresh="loadDocuments"
+      @reset="resetKnowledge"
     />
   </div>
 </template>

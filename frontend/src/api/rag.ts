@@ -57,3 +57,8 @@ export interface FileUploadOut {
   success: boolean
   message: string
 }
+
+/** 重建知识库：DROP 所有 lightrag 表 + 清空缓存（会清空所有文档） */
+export function resetKnowledge() {
+  return request.post<{ success: boolean; message: string }>('/rag/reset').then(r => r.data)
+}

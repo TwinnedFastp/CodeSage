@@ -9,7 +9,8 @@ import type { RagDocument, RagStatus } from '@/api/rag'
 export function useRag() {
   const ragReady = ref(false)
   const ragEnabled = ref(false)
-  const ragMode = ref<'off' | 'naive' | 'local' | 'global' | 'hybrid'>('hybrid')
+  // 默认关闭：避免 RAG 环境故障连累普通对话，用户显式开启才走知识库检索
+  const ragMode = ref<'off' | 'naive' | 'local' | 'global' | 'hybrid'>('off')
   const documents = ref<RagDocument[]>([])
   const loadingDocs = ref(false)
   const uploading = ref(false)
@@ -95,12 +96,38 @@ export function useRag() {
     loadDocuments()
   }
 
+  async function resetKnowledge() {
+    try {
+      await ElMessageBox.confirm(
+        '重建会清空知识库中所有文档与向量数据，且不可恢复，确定继续吗？',
+        '重建知识库',
+        {
+          type: 'warning',
+          confirmButtonText: '重建',
+          cancelButtonText: '取消',
+          confirmButtonClass: 'el-button--danger',
+        },
+      )
+    } catch { return false }
+
+    try {
+      const result = await ragApi.resetKnowledge()
+      documents.value = []
+      ElMessage.success(result.message || '知识库已重建')
+      await checkStatus()
+      return true
+    } catch (err: any) {
+      ElMessage.error(err.response?.data?.detail || '重建知识库失败')
+      return false
+    }
+  }
+
   onMounted(() => { checkStatus() })
 
   return {
     ragReady, ragEnabled, ragMode, ragActive,
     documents, loadingDocs, uploading, knowledgePanelVisible,
     checkStatus, loadDocuments, uploadDocument, uploadFile, removeDocument,
-    openKnowledgePanel,
+    resetKnowledge, openKnowledgePanel,
   }
 }

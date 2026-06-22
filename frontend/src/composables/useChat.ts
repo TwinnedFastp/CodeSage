@@ -104,16 +104,27 @@ export function useChat(
       if (target) target.pending = false
 
       let backendSessionId: string | null = null
+      // 跨 chunk 的行缓冲：SSE 事件可能被拆到多次 read，必须累积后按 \n 切行
+      let lineBuffer = ''
+      let ragNotified = false  // 避免重复弹 rag_error 提示
+      // 占位文本：RAG 检索期间显示，收到真正的 content 后清空
+      const RAG_SEARCHING_PLACEHOLDER = '正在检索知识库…'
+
       while (true) {
         const { value, done } = await reader.read()
         if (done) break
-        const lines = decoder.decode(value).split('\n')
+        // stream: true 保证 UTF-8 多字节字符（中文）跨 chunk 正确解码，不产生乱码
+        lineBuffer += decoder.decode(value, { stream: true })
+        const lines = lineBuffer.split('\n')
+        // 最后一段可能不完整（无换行符结尾），留到下次 read 再处理
+        lineBuffer = lines.pop() || ''
         for (const line of lines) {
           if (!line.startsWith('data: ')) continue
           const data = line.slice(6)
           if (data === '[DONE]') continue
           try {
             const parsed = JSON.parse(data)
+            // 1. 首个事件：后端回传 session_id（无 session_id 时自动创建的场景）
             if (parsed.session_id && !backendSessionId) {
               backendSessionId = parsed.session_id as string
               if (backendSessionId !== sessionId && onSessionCreated) {
@@ -121,17 +132,38 @@ export function useChat(
               }
               continue
             }
-            // 后端推送的 AI 生成标题
+            // 2. 后端推送的 AI 生成标题
             if (parsed.title && parsed.session_id && onTitleGenerated) {
               onTitleGenerated(parsed.session_id as string, parsed.title as string)
               continue
             }
+            // 3. RAG 检索状态反馈：searching 时显示占位，done 时清空
+            if (parsed.rag_status === 'searching') {
+              const t = messages.value.find(m => m.id === assistantId)
+              if (t) t.content = RAG_SEARCHING_PLACEHOLDER
+              continue
+            }
+            if (parsed.rag_status === 'done') {
+              const t = messages.value.find(m => m.id === assistantId)
+              if (t && t.content === RAG_SEARCHING_PLACEHOLDER) t.content = ''
+              continue
+            }
+            // 4. RAG 错误透传：提示用户但不中断对话（降级为纯对话）
+            if (parsed.rag_error && !ragNotified) {
+              ragNotified = true
+              ElMessage.warning(parsed.rag_error)
+              const t = messages.value.find(m => m.id === assistantId)
+              if (t && t.content === RAG_SEARCHING_PLACEHOLDER) t.content = ''
+              continue
+            }
+            // 5. LLM 流式内容：累加到 assistant 气泡
             const t = messages.value.find(m => m.id === assistantId)
             if (t && parsed.content) {
+              if (t.content === RAG_SEARCHING_PLACEHOLDER) t.content = ''
               t.content += parsed.content
               await scrollToBottom()
             }
-          } catch { /* 忽略非 JSON 帧 */ }
+          } catch { /* 忽略非 JSON 帧（如不完整的行） */ }
         }
       }
 

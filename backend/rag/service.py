@@ -23,11 +23,29 @@ from pathlib import Path
 from typing import Any, Optional
 
 import numpy as np
+from sqlalchemy import text
 
 from backend.core.config import settings
+from backend.db.session import AsyncSessionLocal
 from backend.rag.parser import extract_text_from_content
 
 logger = logging.getLogger(__name__)
+
+# LightRAG 全部表名（用于维度不匹配时 DROP 重建 / 手动重建知识库）
+# 这些表是全局共享的，通过 namespace 字段按用户隔离，DROP 会清空所有用户数据
+_LIGHTRAG_TABLES = [
+    "lightrag_vdb_chunks",
+    "lightrag_vdb_entity",
+    "lightrag_vdb_relation",
+    "lightrag_doc_chunks",
+    "lightrag_doc_full",
+    "lightrag_doc_status",
+    "lightrag_full_entities",
+    "lightrag_full_relations",
+    "lightrag_entity_chunks",
+    "lightrag_relation_chunks",
+    "lightrag_llm_cache",
+]
 
 
 class LightRAGService:
@@ -66,6 +84,104 @@ class LightRAGService:
         if rag is not None:
             # 尝试清理资源（LightRAG 没有 aclose，这里只移除引用让 GC 回收）
             logger.info("已失效用户 %s 的 LightRAG 实例缓存", user_id)
+
+    async def _check_and_rebuild_if_dim_mismatch(self, embedding_dim: int) -> None:
+        """
+        检测 lightrag_vdb_chunks.content_vector 列的实际维度，
+        若与配置的 embedding_dim 不匹配，则 DROP 所有 lightrag_* 表并清空缓存。
+
+        触发场景：用户改过 embedding_dim 配置但旧表结构还在（历史遗留），
+        导致 ainsert/aquery 维度校验失败。表结构错误时数据本来就用不了，
+        DROP 无损。注意：lightrag 表是全局共享的，DROP 会清空所有用户数据，
+        但维度不匹配本身就是全局问题，可接受。
+
+        用项目自有的 AsyncSessionLocal 连接，不依赖 LightRAG 内部连接，
+        且在 LightRAG 实例创建之前执行，无连接冲突。
+        """
+        try:
+            async with AsyncSessionLocal() as db:
+                result = await db.execute(
+                    text("""
+                        SELECT format_type(atttypid, atttypmod)
+                        FROM pg_attribute
+                        WHERE attrelid = 'lightrag_vdb_chunks'::regclass
+                          AND attname = 'content_vector'
+                    """)
+                )
+                col_type = result.scalar()
+        except Exception:
+            # 表不存在（首次初始化）或其他异常，忽略，让 LightRAG 自行建表
+            logger.debug("查询向量列维度失败（可能表尚未创建），跳过自愈检查")
+            return
+
+        if not col_type:
+            # 表存在但列不存在，或表不存在，交给 LightRAG 正常建表
+            return
+
+        expected = f"vector({embedding_dim})"
+        if expected in col_type:
+            return  # 维度一致，无需处理
+
+        logger.warning(
+            "向量列维度 %s 与配置 %s 不匹配，DROP 重建 lightrag 表（将清空所有用户知识库数据）",
+            col_type, expected,
+        )
+        try:
+            async with AsyncSessionLocal() as db:
+                for tbl in _LIGHTRAG_TABLES:
+                    await db.execute(text(f"DROP TABLE IF EXISTS {tbl} CASCADE"))
+                await db.commit()
+        except Exception:
+            logger.exception("DROP lightrag 表失败，将由 LightRAG 自行处理")
+            return
+
+        # 清空所有用户的实例缓存（维度变了，所有实例都得重建）
+        async with self._global_lock:
+            self._rag_instances.clear()
+        logger.info("lightrag 表已重建，所有用户实例缓存已清空")
+
+    async def reset_user_knowledge(self) -> None:
+        """
+        手动重建知识库：DROP 所有 lightrag_* 表 + 清空全部实例缓存。
+
+        注意：lightrag 表是全局共享的（通过 namespace 按用户隔离），
+        此操作会清空所有用户的知识库数据。适合在维度不匹配 / 数据损坏时调用。
+        CodeSage 通常是单用户部署，可接受。
+        """
+        async with AsyncSessionLocal() as db:
+            for tbl in _LIGHTRAG_TABLES:
+                await db.execute(text(f"DROP TABLE IF EXISTS {tbl} CASCADE"))
+            await db.commit()
+        async with self._global_lock:
+            self._rag_instances.clear()
+            self._locks.clear()
+        logger.warning("知识库已手动重建：所有 lightrag 表已 DROP，实例缓存已清空")
+
+    async def _wait_for_latest_doc_status(
+        self, user_id: int, provider_config: dict, timeout: float = 60.0,
+    ) -> tuple[str, str]:
+        """
+        ainsert 后轮询 doc_status，等待最新文档处理完成。
+
+        LightRAG 的 ainsert 是异步管道——丢进队列就返回，实际分块/向量化在后台进行。
+        此方法轮询 list_documents，取 created_at 最新的文档，等它脱离 pending。
+
+        返回 (status, content_summary)。超时则返回 ("timeout", "")。
+        失败时抛异常，由调用方决定如何反馈。
+        """
+        deadline = asyncio.get_event_loop().time() + timeout
+        # 先等 1 秒让 ainsert 把文档记录写入 doc_status
+        await asyncio.sleep(1.0)
+        while asyncio.get_event_loop().time() < deadline:
+            docs = await self.list_documents(user_id, provider_config)
+            if docs:
+                # 取最新一条（list_documents 顺序不保证，按 created_at 排序）
+                latest = max(docs, key=lambda d: d.get("created_at", ""))
+                status = latest.get("status", "")
+                if status and status != "pending":
+                    return status, latest.get("content_summary", "")
+            await asyncio.sleep(2.0)
+        return "timeout", ""
 
     async def _ensure_ready(self, user_id: int, provider_config: dict) -> Any:
         """
@@ -108,6 +224,10 @@ class LightRAGService:
             llm_model = provider_config.get("llm_model", "")
             embedding_model = provider_config.get("embedding_model", "")
             embedding_dim = provider_config.get("embedding_dim", 1024)
+
+            # 维度自愈：检查向量列维度是否与配置一致，不匹配则 DROP 重建
+            # 必须在 LightRAG 实例创建之前执行，避免用陈旧表结构初始化
+            await self._check_and_rebuild_if_dim_mismatch(embedding_dim)
 
             # 确保 LightRAG Postgres 连接环境变量已设置
             # 项目主库用 POSTGRES_SERVER，LightRAG 用 POSTGRES_HOST，这里做兼容
@@ -206,28 +326,36 @@ class LightRAGService:
             logger.info("用户 %s 的 LightRAG Postgres 后端初始化完成", user_id)
             return self._rag_instances[user_id]
 
-    async def insert_text(self, user_id: int, provider_config: dict, text: str) -> None:
-        """将原始文本写入 LightRAG 知识库（分块 + 实体关系抽取 + 向量化 + 图谱更新）。"""
+    async def insert_text(self, user_id: int, provider_config: dict, text: str) -> tuple[str, str]:
+        """
+        将原始文本写入 LightRAG 知识库（分块 + 实体关系抽取 + 向量化 + 图谱更新）。
+
+        返回 (status, summary)：status 为最终处理状态（success/failed/timeout），
+        summary 为文档摘要。调用方据此给前端真实反馈，而不是 ainsert 一返回就报成功。
+        """
         rag = await self._ensure_ready(user_id, provider_config)
         if hasattr(rag, "ainsert"):
             await rag.ainsert(text)
         else:
             await asyncio.to_thread(rag.insert, text)
+        # ainsert 是异步管道，立即返回不代表处理完成，需轮询 doc_status 等真实结果
+        return await self._wait_for_latest_doc_status(user_id, provider_config, timeout=60.0)
 
     async def insert_file(
         self, user_id: int, provider_config: dict,
         content: str, filename: str, source: str | None = None,
-    ) -> None:
+    ) -> tuple[str, str]:
         """
         将文件内容写入知识库。
 
         解析 → 拼接标题头/来源头 → 调用 LightRAG ainsert（自带分片+向量化+图谱构建）。
+        返回 (status, summary)，由调用方据此给前端真实反馈。
         """
         parsed = extract_text_from_content(content, filename)
         text = f"# {filename}\n\n{parsed}"
         if source:
             text = f"资料来源：{source}\n\n{text}"
-        await self.insert_text(user_id, provider_config, text)
+        return await self.insert_text(user_id, provider_config, text)
 
     async def query(
         self, user_id: int, provider_config: dict,
@@ -241,6 +369,9 @@ class LightRAGService:
         - local：局部实体关系
         - global：全局图谱关系
         - hybrid：混合模式（默认，效果最好）
+
+        加 30 秒超时保护，避免 hybrid 模式下图谱推理卡死整个流式响应。
+        超时抛 asyncio.TimeoutError，由调用方决定降级策略。
         """
         rag = await self._ensure_ready(user_id, provider_config)
         try:
@@ -250,11 +381,13 @@ class LightRAGService:
 
         query_param = QueryParam(mode=mode)
 
-        if hasattr(rag, "aquery"):
-            answer = await rag.aquery(question, param=query_param)
-        else:
-            answer = await asyncio.to_thread(rag.query, question, param=query_param)
+        async def _do_query():
+            if hasattr(rag, "aquery"):
+                return await rag.aquery(question, param=query_param)
+            return await asyncio.to_thread(rag.query, question, param=query_param)
 
+        # 30 秒超时：hybrid/global 模式会调 LLM 做图谱推理，可能很慢
+        answer = await asyncio.wait_for(_do_query(), timeout=30.0)
         return str(answer)
 
     async def list_documents(self, user_id: int, provider_config: dict) -> list[dict]:

@@ -4,13 +4,17 @@
 设计要点：
 1. 需要登录（依赖 get_current_user）
 2. 每轮对话会读取会话历史消息，拼成 messages 数组传给 LLM —— 让 AI 真正"记住"上下文
-3. 集成 LightRAG：默认检索知识库相关片段，作为 system prompt 的知识背景
+3. 集成 LightRAG：用户显式开启 RAG 模式时检索知识库，作为 system prompt 的知识背景
 4. 供应商配置动态化：从 DB 读取用户启用的供应商配置（API Key / Base URL / 模型），
-   无 DB 配置时兜底使用 .env 环境变量
+   无 DB 配置时返回 400
 5. 用户消息先落库，流式输出 LLM 回复，流结束后 assistant 回复落库
 6. 流结束后保底触发标题生成（前端也会调，二者去重）
 7. 无 session_id 时自动创建会话
+8. RAG 错误透传：检索失败/超时时通过 SSE 推 rag_error 给前端，不再静默吞异常
+9. RAG 检索前先推 rag_status=searching，避免前端在等待期完全无反馈
+10. 兼容推理模型：同时处理 delta.content 和 delta.reasoning_content
 """
+import asyncio
 import json
 import logging
 from uuid import UUID
@@ -67,20 +71,28 @@ async def _load_history_messages(db: AsyncSession, user_id: int, session_id: str
 
 async def _query_knowledge(
     user_id: int, provider_config: dict, user_message: str, mode: str = "hybrid",
-) -> str:
+) -> tuple[str, str]:
     """
-    用 LightRAG 检索知识库，返回相关上下文文本。
+    用 LightRAG 检索知识库，返回 (knowledge, error)。
 
-    LightRAG 不可用时静默降级（返回空串），不影响普通对话。
+    - knowledge: 检索到的知识上下文，失败时为空串
+    - error: 失败原因（超时/异常），成功时为空串
+
+    不再静默吞异常——把错误返回给调用方，由流式管道通过 SSE 推给前端，
+    让用户知道 RAG 为什么没生效。service.query 内部已有 30s 超时保护。
     """
     from backend.core.config import settings
     if not settings.LIGHTRAG_ENABLED:
-        return ""
+        return "", ""
     try:
-        return await lightrag_service.query(user_id, provider_config, user_message, mode=mode)
-    except Exception:
+        knowledge = await lightrag_service.query(user_id, provider_config, user_message, mode=mode)
+        return knowledge, ""
+    except asyncio.TimeoutError:
+        logger.warning("LightRAG 知识检索超时（>30s），降级为纯对话 user_id=%s", user_id)
+        return "", "知识库检索超时（超过 30 秒），已降级为普通对话。如持续超时请检查模型配置或网络。"
+    except Exception as exc:
         logger.exception("LightRAG 知识检索失败，降级为纯对话 user_id=%s", user_id)
-        return ""
+        return "", f"知识库检索失败：{exc}。已降级为普通对话。请在知识库面板查看文档状态或重建知识库。"
 
 
 def _build_system_prompt(knowledge: str, use_rag: bool) -> str:
@@ -133,8 +145,15 @@ async def ai_response_generator(
             stream=True,
         )
         async for chunk in response:
-            if chunk.choices and chunk.choices[0].delta.content:
-                yield f"data: {json.dumps({'content': chunk.choices[0].delta.content}, ensure_ascii=False)}\n\n"
+            if not (chunk.choices and chunk.choices[0].delta):
+                continue
+            delta = chunk.choices[0].delta
+            # 优先 delta.content（普通聊天模型）；
+            # 推理模型（如 GLM-4.5 / DeepSeek-R1 / QwQ）可能只在 reasoning_content 输出，
+            # content 为空，此时用 reasoning_content 作为内容输出，避免"AI 不说话"。
+            piece = delta.content or getattr(delta, "reasoning_content", None)
+            if piece:
+                yield f"data: {json.dumps({'content': piece}, ensure_ascii=False)}\n\n"
     except Exception as e:
         logger.exception("调用大模型失败 model=%s base_url=%s", llm_model, base_url)
         yield f"data: {json.dumps({'content': f'调用大模型发生错误：{str(e)}'}, ensure_ascii=False)}\n\n"
@@ -184,9 +203,16 @@ async def _streaming_with_persistence(
     history = await _load_history_messages(db, user_id, session_id)
 
     # 3. 知识检索：只有用户显式开启 RAG 模式才检索
+    # 先推 rag_status 事件，让前端知道正在检索（避免等待期无反馈）
     knowledge = ""
     if use_rag:
-        knowledge = await _query_knowledge(user_id, provider_config, user_message, mode)
+        yield f"data: {json.dumps({'rag_status': 'searching'}, ensure_ascii=False)}\n\n"
+        knowledge, rag_error = await _query_knowledge(user_id, provider_config, user_message, mode)
+        if rag_error:
+            # 检索失败/超时：推错误给前端，降级为纯对话（knowledge 为空）
+            yield f"data: {json.dumps({'rag_error': rag_error}, ensure_ascii=False)}\n\n"
+        else:
+            yield f"data: {json.dumps({'rag_status': 'done'}, ensure_ascii=False)}\n\n"
 
     # 4 & 5. 流式生成 + 收集完整回复
     full_reply_parts: list[str] = []

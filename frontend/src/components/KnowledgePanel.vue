@@ -15,6 +15,7 @@ const emit = defineEmits<{
   'upload-file': [filename: string, content: string, source?: string]
   remove: [docId: string]
   refresh: []
+  reset: []
 }>()
 
 const uploadText = ref('')
@@ -165,7 +166,12 @@ function formatSize(len: number) {
         <div
           v-for="doc in documents"
           :key="doc.id"
-          class="group p-3 rounded-xl bg-white border border-[#E8E6E1] hover:border-[#D1CFCA] transition-colors"
+          :class="[
+            'group p-3 rounded-xl bg-white border transition-colors',
+            doc.status === 'failed'
+              ? 'border-[#F5C6CB] bg-[#FFF5F5]'
+              : 'border-[#E8E6E1] hover:border-[#D1CFCA]',
+          ]"
         >
           <div class="flex items-start justify-between gap-2 mb-1.5">
             <div class="flex items-center gap-2 min-w-0 flex-1">
@@ -182,7 +188,14 @@ function formatSize(len: number) {
           </div>
           <div class="flex items-center gap-3 text-[11px] text-[#999] ml-5">
             <span>{{ formatSize(doc.content_length) }}</span>
-            <span class="px-1.5 py-0.5 rounded bg-[#F3F2EE] text-[#555]">{{ doc.status }}</span>
+            <span
+              :class="[
+                'px-1.5 py-0.5 rounded font-medium',
+                doc.status === 'failed' ? 'bg-[#FFE0E0] text-[#D9483F]'
+                : doc.status === 'success' ? 'bg-[#E8F5E9] text-[#2E7D32]'
+                : 'bg-[#F3F2EE] text-[#555]',
+              ]"
+            >{{ doc.status }}</span>
             <span>{{ formatTime(doc.created_at) }}</span>
           </div>
         </div>
@@ -191,12 +204,18 @@ function formatSize(len: number) {
         </div>
       </div>
 
-      <!-- 底部说明 -->
+      <!-- 底部说明 + 重建按钮 -->
       <div class="pt-4 mt-4 border-t border-[#E8E6E1]">
-        <p class="text-[11px] text-[#999] leading-relaxed">
+        <p class="text-[11px] text-[#999] leading-relaxed mb-3">
           知识库由 LightRAG 驱动，写入时会自动分块、抽取实体关系、向量化并构建知识图谱。
           聊天时开启 RAG 模式即可检索知识库内容。
         </p>
+        <button
+          @click="$emit('reset')"
+          class="w-full h-8 text-[12px] text-[#999] hover:text-[#D9483F] hover:bg-[#FFF5F5] rounded-lg border border-[#E8E6E1] hover:border-[#F5C6CB] transition-colors"
+        >
+          重建知识库（清空所有数据）
+        </button>
       </div>
     </div>
   </el-drawer>

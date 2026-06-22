@@ -66,7 +66,10 @@ async def insert_document(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> RAGWriteOut:
-    """将文本写入 LightRAG 知识库（分块 + 实体抽取 + 向量化 + 图谱更新）。"""
+    """将文本写入 LightRAG 知识库（分块 + 实体抽取 + 向量化 + 图谱更新）。
+
+    会同步等待文档处理完成（最多 60 秒），按真实状态返回成功/失败。
+    """
     provider_config = await _get_provider_config_or_raise(db, user)
 
     text = payload.text
@@ -74,11 +77,21 @@ async def insert_document(
         text = f"资料来源：{payload.source}\n\n{text}"
 
     try:
-        await lightrag_service.insert_text(user.id, provider_config, text)
-    except RuntimeError as exc:
+        status, _ = await lightrag_service.insert_text(user.id, provider_config, text)
+    except Exception as exc:
+        # 捕获所有异常（不只 RuntimeError），避免 500 无 detail
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
-    return RAGWriteOut(success=True, message="文本已写入 LightRAG 知识库。")
+    # 根据真实处理状态返回，不再 ainsert 一返回就报成功
+    if status == "success":
+        return RAGWriteOut(success=True, message="文本已写入知识库并完成向量化。")
+    if status == "failed":
+        raise HTTPException(
+            status_code=503,
+            detail="文本写入知识库后处理失败（向量化或实体抽取出错），请检查供应商配置或重建知识库。",
+        )
+    # timeout：处理仍在后台进行，告知前端稍后刷新查看
+    return RAGWriteOut(success=True, message="文本已提交，后台仍在处理中，请稍后刷新文档列表查看结果。")
 
 
 @router.post("/upload-file", response_model=FileUploadOut)
@@ -87,17 +100,45 @@ async def upload_file(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> FileUploadOut:
-    """上传文件内容到知识库（前端读取文件后传文本，由 LightRAG 自带逻辑完成分片和向量化）。"""
+    """上传文件内容到知识库（前端读取文件后传文本，由 LightRAG 自带逻辑完成分片和向量化）。
+
+    会同步等待文档处理完成（最多 60 秒），按真实状态返回成功/失败。
+    """
     provider_config = await _get_provider_config_or_raise(db, user)
 
     try:
-        await lightrag_service.insert_file(
+        status, _ = await lightrag_service.insert_file(
             user.id, provider_config, payload.content, payload.filename, payload.source,
         )
-    except RuntimeError as exc:
+    except Exception as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
-    return FileUploadOut(success=True, message=f"文件 {payload.filename} 已写入知识库。")
+    if status == "success":
+        return FileUploadOut(success=True, message=f"文件 {payload.filename} 已写入知识库并完成向量化。")
+    if status == "failed":
+        raise HTTPException(
+            status_code=503,
+            detail=f"文件 {payload.filename} 处理失败（向量化或实体抽取出错），请检查供应商配置或重建知识库。",
+        )
+    return FileUploadOut(success=True, message=f"文件 {payload.filename} 已提交，后台仍在处理中，请稍后刷新查看。")
+
+
+@router.post("/reset")
+async def reset_knowledge(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """
+    重建知识库：DROP 所有 lightrag_* 表 + 清空实例缓存。
+
+    用于维度不匹配 / 数据损坏 / 想清空重来的场景。
+    注意：会清空所有用户的知识库数据（lightrag 表全局共享）。
+    """
+    try:
+        await lightrag_service.reset_user_knowledge()
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"重建知识库失败：{exc}") from exc
+    return {"success": True, "message": "知识库已重建，所有文档已清空，可重新上传。"}
 
 
 @router.get("/documents")
