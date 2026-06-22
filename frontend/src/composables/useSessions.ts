@@ -1,24 +1,38 @@
 /**
  * 会话列表管理：加载 / 切换 / 新建 / 删除 / 标题编辑 / AI 自动生成标题
  */
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import * as convApi from '@/api/conversations'
 import type { ChatSession } from '@/types'
 
+const SESSION_STORAGE_KEY = 'codesage_session_id'
+
 export function useSessions() {
   const sessions = ref<ChatSession[]>([])
-  const currentSessionId = ref<string | null>(null)
+  // 初始值从 localStorage 读取，保证刷新后仍停留在上次选中的会话
+  const currentSessionId = ref<string | null>(localStorage.getItem(SESSION_STORAGE_KEY))
   const loadingSessions = ref(false)
 
   const currentSession = computed(() =>
     sessions.value.find(s => s.id === currentSessionId.value) || null
   )
 
+  // 唯一持久化源：任何路径修改 currentSessionId 都自动同步到 localStorage，
+  // 避免新建会话 / 后端 SSE 自动建会话时遗漏落盘，导致刷新后回退到第一个会话
+  watch(currentSessionId, (id) => {
+    if (id) localStorage.setItem(SESSION_STORAGE_KEY, id)
+    else localStorage.removeItem(SESSION_STORAGE_KEY)
+  })
+
   async function loadSessions() {
     loadingSessions.value = true
     try {
       sessions.value = await convApi.listSessions(50, 0)
+      // 当前会话已不在列表中（如被他端删除）则置空，localStorage 由 watch 自动清理
+      if (currentSessionId.value && !sessions.value.find(s => s.id === currentSessionId.value)) {
+        currentSessionId.value = null
+      }
     } catch (err: any) {
       ElMessage.error(err.response?.data?.message || '加载会话列表失败')
     } finally {
@@ -27,10 +41,11 @@ export function useSessions() {
   }
 
   async function newConversation(): Promise<string | null> {
-    const title = `会话 · ${new Date().toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}`
+    const title = '新会话'
     try {
       const session = await convApi.createSession(title)
       sessions.value.unshift(session)
+      // 仅修改 ref，持久化由顶部 watch 自动完成
       currentSessionId.value = session.id
       return session.id
     } catch (err: any) {
@@ -59,7 +74,10 @@ export function useSessions() {
     try {
       await convApi.deleteSession(id)
       sessions.value = sessions.value.filter(s => s.id !== id)
-      if (currentSessionId.value === id) currentSessionId.value = null
+      // 删除当前会话后置空，localStorage 由 watch 自动清理
+      if (currentSessionId.value === id) {
+        currentSessionId.value = null
+      }
       ElMessage.success('会话已删除')
       return true
     } catch (err: any) {
@@ -101,6 +119,7 @@ export function useSessions() {
   }
 
   // ---- AI 自动生成标题 ----
+  // 记录已生成过标题的会话，避免重复调用接口
   const titleGeneratedSessions = ref(new Set<string>())
 
   /** 后端 SSE 推送标题时直接更新本地（优先级最高，避免重复调接口） */
@@ -114,7 +133,8 @@ export function useSessions() {
   async function tryAutoGenerateTitle(sessionId: string) {
     if (titleGeneratedSessions.value.has(sessionId)) return
     const session = sessions.value.find(s => s.id === sessionId)
-    if (!session || !session.title?.startsWith('会话 ·')) return
+    // 仅当标题仍为默认"新会话"时才生成，确保只在首次对话时触发
+    if (!session || session.title !== '新会话') return
 
     try {
       const updated = await convApi.generateSessionTitle(sessionId)
