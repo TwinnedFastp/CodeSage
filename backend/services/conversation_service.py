@@ -119,6 +119,9 @@ async def generate_title(
 
     provider_config: 用户的供应商配置（含 api_key / base_url / model）。
     若为 None，则从 DB 解析用户生效配置（ai_providers 表）。
+
+    失败兜底策略：LLM 调用异常 / 返回空字符串时，使用第一条用户消息的前
+    15 个字符作为标题，避免标题永远停留在"新会话"；该兜底不会抛异常。
     """
     from openai import AsyncOpenAI
 
@@ -138,6 +141,10 @@ async def generate_title(
         for m in msgs[:4]
     )
 
+    # 先计算兜底标题：LLM 异常或空返回时使用，避免标题永久停在"新会话"
+    fallback_title = _extract_fallback_title(msgs)
+    title = fallback_title or "新会话"
+
     try:
         ai_client = AsyncOpenAI(
             api_key=provider_config["llm_api_key"],
@@ -153,12 +160,34 @@ async def generate_title(
             temperature=0.3,
         )
         raw_title = (response.choices[0].message.content or "").strip().strip('"\'`').strip()
-        title = raw_title[:20] if raw_title else "新会话"
+        if raw_title:
+            # 与提示词约定的 5~15 字对齐，截断到 15 字以内
+            title = raw_title[:15]
+        # raw_title 为空时沿用 fallback_title
     except Exception as exc:
-        logger.exception("LLM 生成标题失败 session_id=%s", session_id)
-        raise ConversationError(f"生成标题失败：{exc}", status=500)
+        # LLM 失败不抛错，沿用兜底标题，前端仍能拿到合理标题
+        logger.warning(
+            "LLM 生成标题失败，使用兜底标题 session_id=%s err=%s", session_id, exc,
+        )
 
     return await update_session(db, user_id, session_id, title=title)
+
+
+def _extract_fallback_title(msgs: list[ChatMessage]) -> str:
+    """
+    从历史消息中提取兜底标题：
+    取第一条 role=user 的消息内容前 15 个字符，去除首尾空白并折叠中间换行/多空格。
+    找不到用户消息（极端情况）时返回空串，由调用方继续兜底为"新会话"。
+    """
+    for m in msgs:
+        if m.role == "user":
+            text = (m.content or "").strip()
+            if not text:
+                continue
+            # 折叠换行与多余空白为单空格，避免标题里出现换行符
+            text = " ".join(text.split())
+            return text[:15]
+    return ""
 
 
 # ==================================================================
