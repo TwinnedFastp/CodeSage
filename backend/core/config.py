@@ -64,6 +64,10 @@ class Settings(BaseSettings):
     LIGHTRAG_WORKING_DIR: str = "data/lightrag"
     # 是否启用 LightRAG。关闭后，RAG 接口会给出明确提示，普通聊天仍可使用。
     LIGHTRAG_ENABLED: bool = True
+    # 是否使用离线分词器（默认开启，适合国内无法访问 tiktoken 词表 CDN 的环境）。
+    # 开启时注入纯 Python 分词器，跳过 tiktoken 远程下载 o200k_base；
+    # 关闭后回退到 LightRAG 默认的 TiktokenTokenizer（需能访问 Azure Blob）。
+    RAG_OFFLINE_TOKENIZER: bool = True
     # 注意：AI 模型供应商配置（API Key / Base URL / 模型名 / Embedding 维度等）
     # 已迁移至数据库 ai_providers 表，通过前端「设置 → 模型供应商」页面管理。
     # 每个用户可配置多个供应商并启用其中一个，无需在 .env 中配置 LLM 相关项。

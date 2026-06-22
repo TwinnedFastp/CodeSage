@@ -135,11 +135,14 @@ class LightRAGService:
             )
 
             # LightRAG 是可选重依赖，放在函数内导入
+            # （tiktoken 网络问题已通过注入 OfflineTokenizer 根治，无需 monkey-patch）
             try:
                 from lightrag import LightRAG
                 from lightrag.kg.shared_storage import initialize_pipeline_status
                 from lightrag.llm.openai import openai_complete_if_cache, openai_embed
                 from lightrag.utils import EmbeddingFunc
+                # 离线分词器：继承 lightrag.utils.Tokenizer，避免 tiktoken 下载 o200k_base
+                from backend.rag.tokenizer import OfflineTokenizer
             except ImportError as exc:
                 raise RuntimeError(
                     "未安装 LightRAG，请先执行 pip install lightrag-hku pgvector asyncpg。"
@@ -176,7 +179,9 @@ class LightRAGService:
                 )
 
             # 混合存储后端：KV/向量/文档状态走 Postgres，图谱走 NetworkX 文件存储
-            rag = LightRAG(
+            # 分词器：默认注入离线分词器，绕过 tiktoken 远程下载 o200k_base（国内网络
+            # SSL 握手失败），可通过 RAG_OFFLINE_TOKENIZER=false 回退到默认 tiktoken
+            rag_kwargs: dict[str, Any] = dict(
                 working_dir=str(working_dir),
                 kv_storage="PGKVStorage",
                 vector_storage="PGVectorStorage",
@@ -188,6 +193,10 @@ class LightRAGService:
                     func=embedding_func,
                 ),
             )
+            if getattr(settings, "RAG_OFFLINE_TOKENIZER", True):
+                rag_kwargs["tokenizer"] = OfflineTokenizer()
+                logger.info("用户 %s 启用离线分词器，跳过 tiktoken 网络下载", user_id)
+            rag = LightRAG(**rag_kwargs)
 
             # 初始化存储和 pipeline 状态
             await rag.initialize_storages()
