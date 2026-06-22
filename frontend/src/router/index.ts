@@ -31,6 +31,12 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true, title: 'CodeSage · 你的代码工程师' },
   },
   {
+    path: '/database-admin',
+    name: 'database-admin',
+    component: () => import('@/features/database-admin/DatabaseAdminView.vue'),
+    meta: { requiresAuth: true, title: '数据库管理 · CodeSage' },
+  },
+  {
     path: '/settings',
     name: 'settings',
     component: () => import('@/views/SettingsView.vue'),

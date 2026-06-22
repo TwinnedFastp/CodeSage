@@ -195,6 +195,13 @@ const maskedEmail = computed(() => {
       <!-- 顶部标签条 -->
       <nav class="flex px-2 pb-2 gap-1">
         <button
+          @click="router.push('/database-admin')"
+          class="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg transition-all text-[13px] text-[#666]"
+        >
+          <el-icon :size="15"><Coin /></el-icon>
+          <span>数据库</span>
+        </button>
+        <button
           @click="activeTab = 'account'"
           :class="['flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg transition-all text-[13px]', activeTab === 'account' ? 'bg-white text-[#111] font-medium shadow-sm' : 'text-[#666]']"
         >
@@ -222,6 +229,26 @@ const maskedEmail = computed(() => {
           <p class="text-[13px] text-[#999] mb-10">你的账户基础信息与安全状态</p>
 
           <div class="space-y-6">
+            <div class="bg-white rounded-2xl border border-[#E8E6E1] p-6">
+              <div class="flex items-center justify-between gap-4">
+                <div class="flex items-center gap-4">
+                  <div class="w-12 h-12 rounded-xl bg-[#111] text-white flex items-center justify-center">
+                    <el-icon :size="22"><Coin /></el-icon>
+                  </div>
+                  <div>
+                    <p class="text-[15px] font-semibold">PostgreSQL 数据库管理</p>
+                    <p class="text-[12px] text-[#999] mt-0.5">查看 public 表、分页查询、按主键新增/编辑/删除记录</p>
+                  </div>
+                </div>
+                <button
+                  @click="router.push('/database-admin')"
+                  class="shrink-0 px-5 py-2 rounded-full text-[13px] font-medium bg-[#111] text-white hover:bg-[#333] transition-colors"
+                >
+                  进入管理
+                </button>
+              </div>
+            </div>
+
             <div class="bg-white rounded-2xl border border-[#E8E6E1] p-6">
               <div class="flex items-center gap-4 mb-5">
                 <div class="w-14 h-14 rounded-full bg-[#F3F2EE] flex items-center justify-center text-[#555]">

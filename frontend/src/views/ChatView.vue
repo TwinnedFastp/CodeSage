@@ -77,6 +77,12 @@ function goToSettings() {
   router.push('/settings')
 }
 
+function goToDatabaseAdmin() {
+  userMenuVisible.value = false
+  drawerVisible.value = false
+  router.push('/database-admin')
+}
+
 const maskedEmail = computed(() => {
   const e = auth.user?.email || ''
   if (!e) return ''
@@ -148,7 +154,25 @@ const ragModeOptions = [
         </button>
       </div>
 
-      <div class="px-5 mb-6 mt-2">
+      <div class="px-5 mb-4 mt-2">
+        <!-- 顶部小图标目录：快速进入聊天 / 数据库 / 设置 -->
+        <div class="grid grid-cols-3 gap-2 p-2 rounded-2xl bg-white border border-[#E8E6E1] shadow-[0_4px_18px_rgb(0,0,0,0.04)]">
+          <button class="flex flex-col items-center justify-center gap-1 py-2.5 rounded-xl bg-[#111] text-white" title="当前聊天">
+            <el-icon :size="15"><ChatDotRound /></el-icon>
+            <span v-if="!isSidebarCollapse" class="text-[10px]">聊天</span>
+          </button>
+          <button @click="goToDatabaseAdmin" class="flex flex-col items-center justify-center gap-1 py-2.5 rounded-xl text-[#666] hover:bg-[#F3F2EE] hover:text-[#111] transition-colors" title="数据库管理">
+            <el-icon :size="15"><Coin /></el-icon>
+            <span v-if="!isSidebarCollapse" class="text-[10px]">数据库</span>
+          </button>
+          <button @click="goToSettings" class="flex flex-col items-center justify-center gap-1 py-2.5 rounded-xl text-[#666] hover:bg-[#F3F2EE] hover:text-[#111] transition-colors" title="系统设置">
+            <el-icon :size="15"><Setting /></el-icon>
+            <span v-if="!isSidebarCollapse" class="text-[10px]">设置</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="px-5 mb-6">
         <button class="w-full h-11 bg-[#111111] hover:bg-[#333333] text-white rounded-full flex items-center justify-center gap-2 transition-all duration-300 shadow-sm" @click="newConversation">
           <el-icon><Plus /></el-icon>
           <span v-if="!isSidebarCollapse" class="text-sm font-medium">New Conversation</span>
@@ -229,6 +253,9 @@ const ragModeOptions = [
         <div class="pt-4 border-t border-[#E8E6E1]/50 space-y-1">
           <button class="w-full flex items-center gap-3 px-2 py-2 text-[13px] text-[#444444] hover:text-[#111111]" @click="router.push('/settings')">
             <el-icon :size="16"><Cpu /></el-icon><span>模型供应商设置</span>
+          </button>
+          <button class="w-full flex items-center gap-3 px-2 py-2 text-[13px] text-[#444444] hover:text-[#111111]" @click="goToDatabaseAdmin">
+            <el-icon :size="16"><Coin /></el-icon><span>数据库管理</span>
           </button>
           <button class="w-full flex items-center gap-3 px-2 py-2 text-[13px] text-[#444444] hover:text-[#111111]" @click="onLogout">
             <el-icon :size="16"><SwitchButton /></el-icon><span>退出登录 ({{ maskedEmail }})</span>

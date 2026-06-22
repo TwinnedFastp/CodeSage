@@ -12,5 +12,7 @@ api_router.include_router(chat.router, prefix="/chat", tags=["chat"])
 api_router.include_router(conversations.router, prefix="/conversations", tags=["conversations"])
 # AI 供应商配置管理
 api_router.include_router(providers.router, prefix="/providers", tags=["providers"])
+# PostgreSQL 数据库管理（仅表数据 CRUD，不开放任意 SQL）
+api_router.include_router(database_admin.router, prefix="/database-admin", tags=["database-admin"])
 # LightRAG 知识库模块（统一在 backend.rag 包中管理）
 api_router.include_router(rag.router, prefix="/rag", tags=["rag"])
