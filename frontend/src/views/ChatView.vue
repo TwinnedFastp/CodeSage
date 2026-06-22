@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
   ChatDotRound, Operation, Plus, User as UserIcon, Monitor, Setting,
-  Fold, Expand, Promotion, SwitchButton, Edit, Collection, Files, Cpu,
+  Fold, Expand, Promotion, SwitchButton, Collection, Files, Cpu,
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useResponsive } from '@/composables/useResponsive'
@@ -12,6 +12,8 @@ import { useSessions } from '@/composables/useSessions'
 import { useChat } from '@/composables/useChat'
 import { useRag } from '@/composables/useRag'
 import KnowledgePanel from '@/components/KnowledgePanel.vue'
+// 复用单条会话项组件，避免桌面端/移动端两处列表重复代码
+import SessionListItem from '@/components/SessionListItem.vue'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -50,7 +52,9 @@ const {
 // ---- 初始化 ----
 ;(async () => {
   await loadSessions()
-  if (sessions.value.length > 0) {
+  if (currentSessionId.value) {
+    await loadMessages(currentSessionId.value)
+  } else if (sessions.value.length > 0) {
     selectSession(sessions.value[0].id)
     await loadMessages(sessions.value[0].id)
   } else {
@@ -153,38 +157,22 @@ const ragModeOptions = [
 
       <nav class="flex-1 overflow-y-auto px-3 py-2 space-y-1 custom-scrollbar">
         <div v-if="loadingSessions" class="px-3 py-2 text-[12px] text-[#999999]">加载中…</div>
-        <div
+        <!-- 桌面端会话列表：复用 SessionListItem 组件 -->
+        <!-- 点击热区为整行，重命名按钮平时不拦截指针事件，解决"点空白处无反应" -->
+        <SessionListItem
           v-for="chat in sessions"
           :key="chat.id"
-          :class="['group flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors', chat.id === currentSessionId ? 'bg-[#E8E6E1]' : 'hover:bg-[#E8E6E1]', editingSessionId === chat.id ? 'ring-1 ring-[#111111]/20' : '']"
-        >
-          <div :class="['w-1.5 h-1.5 rounded-full shrink-0', chat.id === currentSessionId ? 'bg-[#111111]' : 'bg-[#D1CFCA]']"></div>
-          <template v-if="editingSessionId === chat.id">
-            <input
-              v-model="editingTitle"
-              class="session-title-input flex-1 min-w-0 bg-white border border-[#D1CFCA] rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-[#111111] outline-none focus:border-[#111111] transition-colors"
-              maxlength="60"
-              @keydown="(e: KeyboardEvent) => handleTitleKeydown(e, chat.id)"
-              @blur="confirmEditTitle(chat.id)"
-            />
-          </template>
-          <template v-else>
-            <span
-              v-if="!isSidebarCollapse"
-              class="flex-1 min-w-0 truncate text-[13px] font-medium cursor-pointer"
-              :class="chat.id === currentSessionId ? 'text-[#111111]' : 'text-[#444444] group-hover:text-[#111111]'"
-              @click="onSelectSession(chat.id)"
-              @dblclick.stop="startEditTitle(chat.id, chat.title || '')"
-            >{{ chat.title || '未命名会话' }}</span>
-            <button
-              v-if="!isSidebarCollapse"
-              class="shrink-0 p-1 rounded-md opacity-0 group-hover:opacity-100 hover:bg-[#EAE8E0] transition-all text-[#999999] hover:text-[#111111]"
-              @click.stop="startEditTitle(chat.id, chat.title || '')"
-              title="重命名"
-            ><el-icon :size="12"><Edit /></el-icon></button>
-            <div v-if="isSidebarCollapse" class="cursor-pointer flex-1" @click="onSelectSession(chat.id)"></div>
-          </template>
-        </div>
+          :session="chat"
+          :active="chat.id === currentSessionId"
+          :editing="editingSessionId === chat.id"
+          v-model="editingTitle"
+          :collapsed="isSidebarCollapse"
+          @select="onSelectSession"
+          @start-edit="(id: string, title: string) => startEditTitle(id, title)"
+          @confirm-edit="confirmEditTitle"
+          @cancel-edit="cancelEditTitle"
+          @title-keydown="(ev: KeyboardEvent, id: string) => handleTitleKeydown(ev, id)"
+        />
         <div v-if="!loadingSessions && sessions.length === 0 && !isSidebarCollapse" class="px-3 py-4 text-[12px] text-[#999999] text-center">暂无会话</div>
       </nav>
 
@@ -223,20 +211,20 @@ const ragModeOptions = [
           <el-icon><Plus /></el-icon><span class="text-sm font-medium">New Conversation</span>
         </button>
         <div class="flex-1 overflow-y-auto space-y-1 custom-scrollbar">
-          <div
+          <!-- 移动端抽屉会话列表：复用 SessionListItem 组件（不传 collapsed） -->
+          <SessionListItem
             v-for="chat in sessions"
             :key="chat.id"
-            :class="['flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors group', chat.id === currentSessionId ? 'bg-[#E8E6E1]' : 'hover:bg-[#E8E6E1]', editingSessionId === chat.id ? 'ring-1 ring-[#111111]/20' : '']"
-          >
-            <div :class="['w-1.5 h-1.5 rounded-full shrink-0', chat.id === currentSessionId ? 'bg-[#111111]' : 'bg-[#D1CFCA]']"></div>
-            <template v-if="editingSessionId === chat.id">
-              <input v-model="editingTitle" class="session-title-input flex-1 min-w-0 bg-white border border-[#D1CFCA] rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-[#111111] outline-none focus:border-[#111111]" maxlength="60" @keydown="(e: KeyboardEvent) => handleTitleKeydown(e, chat.id)" @blur="confirmEditTitle(chat.id)" />
-            </template>
-            <template v-else>
-              <span class="flex-1 min-w-0 truncate text-[13px] font-medium cursor-pointer" :class="chat.id === currentSessionId ? 'text-[#111111]' : 'text-[#444444]'" @click="onSelectSession(chat.id)" @dblclick.stop="startEditTitle(chat.id, chat.title || '')">{{ chat.title || '未命名会话' }}</span>
-              <button class="shrink-0 p-1 rounded-md opacity-0 group-hover:opacity-100 hover:bg-[#EAE8E0] transition-all text-[#999999] hover:text-[#111111]" @click.stop="startEditTitle(chat.id, chat.title || '')" title="重命名"><el-icon :size="12"><Edit /></el-icon></button>
-            </template>
-          </div>
+            :session="chat"
+            :active="chat.id === currentSessionId"
+            :editing="editingSessionId === chat.id"
+            v-model="editingTitle"
+            @select="onSelectSession"
+            @start-edit="(id: string, title: string) => startEditTitle(id, title)"
+            @confirm-edit="confirmEditTitle"
+            @cancel-edit="cancelEditTitle"
+            @title-keydown="(ev: KeyboardEvent, id: string) => handleTitleKeydown(ev, id)"
+          />
         </div>
         <div class="pt-4 border-t border-[#E8E6E1]/50 space-y-1">
           <button class="w-full flex items-center gap-3 px-2 py-2 text-[13px] text-[#444444] hover:text-[#111111]" @click="router.push('/settings')">
