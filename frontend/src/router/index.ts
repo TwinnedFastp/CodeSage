@@ -43,6 +43,12 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true, title: '设置 · CodeSage' },
   },
   {
+    path: '/node/:id',
+    name: 'node-detail',
+    component: () => import('@/features/generative-ui/NodeDetailView.vue'),
+    meta: { requiresAuth: true, title: '节点详情 · CodeSage' },
+  },
+  {
     path: '/:pathMatch(.*)*',
     redirect: '/chat',
   },

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, nextTick, watch, onMounted } from 'vue'
-import { ChatDotRound, Promotion, User as UserIcon } from '@element-plus/icons-vue'
+import { useRouter } from 'vue-router'
+import { ChatDotRound, Promotion, User as UserIcon, Link } from '@element-plus/icons-vue'
 import { useGenerativeUi } from './useGenerativeUi'
 import ComponentRenderer from './ComponentRenderer.vue'
 
@@ -13,6 +14,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'session-created', id: string): void
 }>()
+
+const router = useRouter()
 
 const {
   messages,
@@ -115,6 +118,17 @@ onMounted(() => {
               @function-call="(p) => p.function_name && callFunction(p.function_name, p.params || {}, p.target_id || msg.nodeId)"
               @switch-version="(p) => msg.nodeId && switchVersion(msg.nodeId, p.versionId)"
             />
+            <div v-if="msg.nodeId" class="mt-2">
+              <el-button
+                size="small"
+                text
+                @click="router.push({ name: 'node-detail', params: { id: msg.nodeId } })"
+                class="!text-[11px] !text-[#777777] hover:!text-[#111111] !p-0 !h-auto"
+              >
+                <el-icon class="mr-1"><Link /></el-icon>
+                查看详情
+              </el-button>
+            </div>
             <div v-else class="text-[15px] leading-relaxed text-[#111111] flex items-center gap-2">
               <span
                 v-if="msg.loading"
