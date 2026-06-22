@@ -17,6 +17,7 @@ export function useDatabaseAdmin() {
   const editorMode = ref<'create' | 'edit'>('create')
   const form = reactive<Record<string, any>>({})
   const editingPrimaryKey = ref<Record<string, any>>({})
+  const selectedRows = ref<Record<string, any>[]>([])
 
   const columns = computed<DatabaseColumn[]>(() => rowData.value?.columns || [])
   const primaryKeys = computed<string[]>(() => rowData.value?.primary_keys || [])
@@ -172,11 +173,40 @@ export function useDatabaseAdmin() {
     return String(value)
   }
 
+  function selectableRows(row: Record<string, any>): boolean {
+    if (primaryKeys.value.length === 0) return false
+    return primaryKeys.value.every((key) => row[key] != null)
+  }
+
+  async function removeRows(selected: Record<string, any>[]) {
+    if (!selectedTable.value) return
+    if (primaryKeys.value.length === 0) {
+      ElMessage.warning('该表没有主键，暂不支持删除')
+      return
+    }
+    let successCount = 0
+    let failCount = 0
+    for (const row of selected) {
+      try {
+        await databaseApi.deleteRow(selectedTable.value, { primary_key: pickPrimaryKey(row) })
+        successCount++
+      } catch (err: any) {
+        failCount++
+        console.warn('批量删除失败', row, err)
+      }
+    }
+    if (successCount > 0) ElMessage.success(`成功删除 ${successCount} 条记录${failCount > 0 ? `，${failCount} 条失败` : ''}`)
+    else if (failCount > 0) ElMessage.error('批量删除失败')
+    await loadRows()
+    await loadTables()
+  }
+
   return {
     tables, selectedTable, selectedMeta, rowData, columns, primaryKeys, rows, total,
     loadingTables, loadingRows, saving, pageSize, currentPage, searchText,
-    editorVisible, editorMode, form,
-    loadTables, loadRows, selectTable, openCreate, openEdit, saveRow, removeRow,
+    editorVisible, editorMode, form, selectedRows,
+    selectableRows,
+    loadTables, loadRows, selectTable, openCreate, openEdit, saveRow, removeRow, removeRows,
     formatCell,
   }
 }

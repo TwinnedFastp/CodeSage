@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Coin, RefreshRight, Plus, Edit, Delete, Search,
   ArrowLeft, Monitor,
@@ -13,7 +13,8 @@ const {
   tables, selectedTable, selectedMeta, rowData, columns, primaryKeys, rows, total,
   loadingTables, loadingRows, saving, pageSize, currentPage, searchText,
   editorVisible, editorMode, form,
-  loadTables, loadRows, selectTable, openCreate, openEdit, saveRow, removeRow,
+  selectedRows, selectableRows,
+  loadTables, loadRows, selectTable, openCreate, openEdit, saveRow, removeRow, removeRows,
   formatCell,
 } = useDatabaseAdmin()
 
@@ -28,6 +29,27 @@ function goChat() {
 
 function goSettings() {
   router.push('/settings')
+}
+
+function handleSelectionChange(rows: any[]) {
+  selectedRows.value = rows
+}
+
+async function batchDelete() {
+  if (selectedRows.value.length === 0) {
+    ElMessage.warning('请先选中要删除的记录')
+    return
+  }
+  try {
+    await ElMessageBox.confirm(`确定删除选中的 ${selectedRows.value.length} 条记录吗？删除后无法恢复。`, '批量删除', {
+      type: 'warning',
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+      confirmButtonClass: 'el-button--danger',
+    })
+  } catch { return }
+  await removeRows(selectedRows.value)
+  selectedRows.value = []
 }
 
 async function refreshAll() {
@@ -75,7 +97,7 @@ onMounted(() => {
 <template>
   <div class="flex h-screen w-screen bg-[#FAFAFA] text-[#111111] overflow-hidden font-sans">
     <!-- 左侧数据库目录 -->
-    <aside class="w-[300px] bg-[#F3F2EE] border-r border-[#E8E6E1] flex flex-col shrink-0">
+    <aside class="w-[280px] bg-[#F3F2EE] border-r border-[#E8E6E1] flex flex-col shrink-0">
       <div class="p-6 flex items-center justify-between h-20">
         <div class="flex items-center gap-3">
           <div class="w-7 h-7 rounded-full bg-[#111111] text-white flex items-center justify-center">
@@ -164,14 +186,9 @@ onMounted(() => {
             <h2 class="font-serif text-3xl tracking-tight">{{ selectedTable || '请选择一张表' }}</h2>
             <p class="text-[13px] text-[#999] mt-1">像若依那样管理表数据，但保持 CodeSage 的杂志风视觉。</p>
           </div>
-          <div class="flex items-center gap-2">
-            <button @click="goChat" class="px-4 py-2 rounded-full text-[13px] text-[#666] hover:text-[#111] hover:bg-[#F3F2EE] transition-colors">
-              返回聊天
-            </button>
-            <button @click="openCreate" :disabled="!selectedTable" class="px-4 py-2 rounded-full text-[13px] font-medium bg-[#111] text-white hover:bg-[#333] transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
-              <span class="inline-flex items-center gap-2"><Plus :size="14" />新增记录</span>
-            </button>
-          </div>
+          <button @click="goChat" class="px-4 py-2 rounded-full text-[13px] text-[#666] hover:text-[#111] hover:bg-[#F3F2EE] transition-colors">
+            返回聊天
+          </button>
         </div>
 
         <!-- 概览卡 -->
@@ -209,6 +226,10 @@ onMounted(() => {
             <div class="flex items-center gap-2 ml-auto">
               <button @click="loadRows(true)" class="px-4 py-2.5 rounded-full text-[13px] text-[#666] hover:text-[#111] hover:bg-[#F3F2EE] transition-colors">重置</button>
               <button @click="onSearch" class="px-4 py-2.5 rounded-full text-[13px] font-medium bg-[#111] text-white hover:bg-[#333] transition-colors">查询</button>
+              <button @click="openCreate" :disabled="!selectedTable" class="px-4 py-2.5 rounded-full text-[13px] font-medium bg-[#111] text-white hover:bg-[#333] transition-colors disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-1.5">
+                <el-icon :size="14"><Plus /></el-icon>
+                <span>新增记录</span>
+              </button>
             </div>
           </div>
         </div>
@@ -226,7 +247,9 @@ onMounted(() => {
               stripe
               style="width: 100%"
               class="database-table"
+              @selection-change="handleSelectionChange"
             >
+              <el-table-column type="selection" width="50" :selectable="selectableRows" />
               <el-table-column
                 v-for="col in columns"
                 :key="col.name"
@@ -254,8 +277,18 @@ onMounted(() => {
             </el-table>
 
             <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3 px-4 py-4 border-t border-[#F3F2EE]">
-              <div class="text-[12px] text-[#999]">
-                当前第 {{ currentPage }} 页，共 {{ total }} 条记录
+              <div class="flex items-center gap-3">
+                <button
+                  v-if="selectedRows.length > 0"
+                  @click="batchDelete"
+                  class="px-4 py-2 rounded-full text-[12px] font-medium bg-[#D32F2F] text-white hover:bg-[#B71C1C] transition-colors inline-flex items-center gap-1.5"
+                >
+                  <el-icon :size="12"><Delete /></el-icon>
+                  <span>删除选中（{{ selectedRows.length }}）</span>
+                </button>
+                <div class="text-[12px] text-[#999]">
+                  当前第 {{ currentPage }} 页，共 {{ total }} 条记录
+                </div>
               </div>
               <el-pagination
                 layout="prev, pager, next, sizes, jumper"

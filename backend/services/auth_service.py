@@ -343,6 +343,10 @@ async def issue_avatar_upload(user: User, filename: str, content_type: str) -> d
         logger.exception("生成头像上传链接失败 user_id=%s", user.id)
         raise AuthError("生成头像上传链接失败", code="s3_error", status=502) from exc
 
+    public_base = settings.S3_PUBLIC_BASE_URL.rstrip("/")
+    if public_base:
+        upload_url = upload_url.replace(settings.S3_ENDPOINT_URL.rstrip("/"), public_base)
+
     return {
         "upload_url": upload_url,
         "object_key": object_key,

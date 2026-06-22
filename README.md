@@ -12,15 +12,55 @@
 
 - `backend/`: FastAPI 后端代码。
 - `frontend/`: Vue 3 前端代码。
+- `docker_data/`: Docker 运行时数据卷（PostgreSQL 初始化脚本、Redis 配置、MinIO 数据）。
 - `docker-compose.yml`: 一键启动配置。
+
+## 服务端口一览
+
+| 服务 | 端口 | 访问地址 |
+|------|------|----------|
+| 前端页面 | 80 | `http://localhost` |
+| 后端 API | 8000 | `http://localhost:8000` |
+| PostgreSQL | 5432 | `localhost:5432` |
+| Redis | 6379 | `localhost:6379` |
+| MinIO API (S3) | 9000 | `http://localhost:9000` |
+| MinIO 控制台 | 9001 | `http://localhost:9001` |
 
 ## 如何运行
 
 ### 使用 Docker (推荐)
 
 ```bash
-docker-compose up --build
+docker-compose up -d --build
 ```
+
+## MinIO 对象存储
+
+项目使用 MinIO 存储用户头像等文件资源（S3 兼容协议）。
+
+### MinIO 控制台
+
+打开浏览器访问 `http://localhost:9001`：
+
+- **用户名**: `codesage_minio`（由 `MINIO_ROOT_USER` 环境变量控制）
+- **密码**: `codesage_minio_change_me_32_chars`（由 `MINIO_ROOT_PASSWORD` 环境变量控制，**生产环境务必修改**）
+
+### 头像上传流程
+
+1. 浏览器调用 `POST /api/v1/auth/me/avatar/upload` 获取 MinIO 预签名上传 URL
+2. 浏览器通过 `PUT` 请求直接将图片上传到 MinIO
+3. 上传成功后调用 `POST /api/v1/auth/me/avatar/commit` 保存头像引用
+
+### 相关配置（docker-compose.yml backend 环境变量）
+
+| 变量 | 说明 | 默认值 |
+|------|------|--------|
+| `S3_ENABLED` | 启用 MinIO | `true` |
+| `S3_ENDPOINT_URL` | MinIO API 端点（Docker 内部） | `http://minio:9000` |
+| `S3_PUBLIC_BASE_URL` | MinIO API 公开地址（浏览器） | `http://localhost:9000` |
+| `S3_ACCESS_KEY_ID` | MinIO 用户名 | `codesage_minio` |
+| `S3_SECRET_ACCESS_KEY` | MinIO 密码 | 与 `MINIO_ROOT_PASSWORD` 一致 |
+| `S3_BUCKET_AVATARS` | 头像存储桶 | `codesage-avatars` |
 
 ### 本地开发
 
