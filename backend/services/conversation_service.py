@@ -222,6 +222,18 @@ async def list_messages(
     return list(result.scalars().all())
 
 
+async def build_short_term_messages(
+    db: AsyncSession, user_id: int, session_id, limit: int = 20
+) -> list[dict]:
+    """组装短期记忆：取最近 limit 条消息转为 {role, content} 字典列表。"""
+    sid = UUID(session_id) if isinstance(session_id, str) else session_id
+    msgs = await list_messages(db, user_id, sid, limit=limit, offset=0)
+    return [
+        {"role": "user" if m.role == "user" else "assistant", "content": m.content}
+        for m in msgs
+    ]
+
+
 # ==================================================================
 # 用户长期偏好（JSONB 整体 upsert + 合并）
 # ==================================================================

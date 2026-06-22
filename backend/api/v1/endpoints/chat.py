@@ -24,11 +24,10 @@ from fastapi.responses import StreamingResponse, JSONResponse
 from openai import AsyncOpenAI
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.api.deps import get_current_user
-from backend.db.session import get_db
+from backend.api.deps import get_current_user, get_db
 from backend.models.user import User
 from backend.rag.service import lightrag_service
-from backend.services import conversation_service
+from backend.services import conversation_service, node_service
 from backend.services.provider_service import resolve_provider_config
 from backend.sys_prompts import CHAT_SYSTEM_PROMPT
 
@@ -244,6 +243,42 @@ async def _streaming_with_persistence(
         logger.debug("读取会话标题失败，跳过保底生成 session_id=%s", session_id)
 
 
+async def _component_streaming_with_persistence(
+    user_message: str, session_id: str, user_id: int, db: AsyncSession,
+    provider_config: dict, use_rag: bool, mode: str,
+):
+    await _persist_message(db, user_id, session_id, "user", user_message)
+    history = await _load_history_messages(db, user_id, session_id)
+
+    knowledge = ""
+    if use_rag:
+        yield f"data: {json.dumps({'rag_status': 'searching'}, ensure_ascii=False)}\n\n"
+        knowledge, rag_error = await _query_knowledge(user_id, provider_config, user_message, mode)
+        if rag_error:
+            yield f"data: {json.dumps({'rag_error': rag_error}, ensure_ascii=False)}\n\n"
+        else:
+            yield f"data: {json.dumps({'rag_status': 'done'}, ensure_ascii=False)}\n\n"
+
+    try:
+        node, version, protocol = await node_service.create_root_from_chat(
+            db, user_id, UUID(session_id), history, user_message, knowledge
+        )
+        component = protocol.model_dump(mode="json")
+        await _persist_message(
+            db, user_id, session_id, "assistant",
+            json.dumps(component, ensure_ascii=False),
+        )
+        yield f"data: {json.dumps({'node_id': str(node.id)}, ensure_ascii=False)}\n\n"
+        yield f"data: {json.dumps({'component': component}, ensure_ascii=False)}\n\n"
+    except ValueError as exc:
+        yield f"data: {json.dumps({'error': str(exc)}, ensure_ascii=False)}\n\n"
+    except Exception as exc:
+        logger.exception("组件模式生成失败 session_id=%s", session_id)
+        yield f"data: {json.dumps({'error': f'组件生成失败：{exc}'}, ensure_ascii=False)}\n\n"
+
+    yield "data: [DONE]\n\n"
+
+
 @router.post("/stream")
 async def chat_streaming(
     request: Request,
@@ -264,6 +299,7 @@ async def chat_streaming(
     message = payload.get("message", "")
     use_rag = bool(payload.get("use_rag", False))
     mode = payload.get("mode", "hybrid")
+    render_mode = payload.get("render_mode", "text")
     session_id = payload.get("session_id")
 
     if not message:
@@ -289,6 +325,12 @@ async def chat_streaming(
     # 透传 session_id 给前端（通过首个 SSE 事件）
     async def wrapped():
         yield f"data: {json.dumps({'session_id': session_id}, ensure_ascii=False)}\n\n"
+        if render_mode == "component":
+            async for chunk in _component_streaming_with_persistence(
+                message, session_id, user.id, db, provider_config, use_rag, mode,
+            ):
+                yield chunk
+            return
         async for chunk in _streaming_with_persistence(
             message, session_id, user.id, db, provider_config, use_rag, mode,
         ):

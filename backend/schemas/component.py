@@ -104,8 +104,9 @@ def component_protocol_from_text(raw: str) -> ComponentProtocol:
             text = text[first_newline + 1:]
         else:
             text = text[3:]
+        text = text.rstrip()
         if text.endswith("```"):
-            text = text[:-3]
+            text = text[:-3].rstrip()
         text = text.strip()
 
     start = text.find("{")

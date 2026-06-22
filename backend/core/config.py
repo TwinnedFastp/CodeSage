@@ -50,8 +50,18 @@ class Settings(BaseSettings):
     SMTP_USER: str = ""
     SMTP_PASSWORD: str = ""
     SMTP_FROM: str = ""
+    SMTP_TIMEOUT_SECONDS: float = 5.0
 
-    # ---- 登录安全策略 ----
+    # ---- S3 / MinIO 对象存储配置 ----
+    S3_ENABLED: bool = False
+    S3_ENDPOINT_URL: str = ""
+    S3_PUBLIC_BASE_URL: str = ""
+    S3_ACCESS_KEY_ID: str = ""
+    S3_SECRET_ACCESS_KEY: str = ""
+    S3_BUCKET_AVATARS: str = "codesage-avatars"
+    S3_REGION: str = "us-east-1"
+    S3_USE_SSL: bool = False
+    S3_PRESIGN_EXPIRE_SECONDS: int = 300
     LOGIN_MAX_FAIL_ATTEMPTS: int = 5
     LOGIN_LOCK_MINUTES: int = 15
     EMAIL_VERIFY_EXPIRE_HOURS: int = 24
@@ -77,6 +87,9 @@ class Settings(BaseSettings):
         case_sensitive = True
         # 指定环境变量文件的位置
         env_file = ".env"
+        # 忽略 .env / 环境中未声明的字段（如 LightRAG 运行期注入的 POSTGRES_HOST 等历史变量），
+        # 避免多余的运行期变量导致 Settings 校验失败、使整个后端无法导入。
+        extra = "ignore"
 
     @property
     def async_database_url(self) -> str:

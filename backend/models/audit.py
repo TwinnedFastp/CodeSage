@@ -27,7 +27,7 @@ class FunctionCallAudit(Base):
     id = Column(BigInteger, primary_key=True, index=True)
     user_id = Column(BigInteger, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     function_name = Column(String(128), nullable=False)
-    params_json = Column(JSONB, nullable=False, default=dict, server_default="{}")
+    params_json = Column(JSONB, nullable=False, default=lambda: {}, server_default="{}")
     result_json = Column(JSONB, nullable=True)
     status = Column(String(16), nullable=False, default="success", server_default="success")
     duration_ms = Column(Integer, nullable=True)
