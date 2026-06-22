@@ -149,10 +149,10 @@ async def _maybe_auto_title(
     """
     流结束后保底触发标题生成。
 
-    触发条件：标题为空 / 仍是默认 "会话 ·" 模板。
+    触发条件：标题为空 / 仍是默认 "新会话"。
     成功返回新标题，失败返回 None（前端调用作为补充，二者通过 titleGeneratedSessions 去重）。
     """
-    if current_title and not current_title.startswith("会话 ·"):
+    if current_title and current_title != "新会话":
         return None
     try:
         updated = await conversation_service.generate_title(
