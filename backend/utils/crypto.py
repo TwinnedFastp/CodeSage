@@ -12,6 +12,8 @@
 """
 from __future__ import annotations
 
+import base64
+import hashlib
 import logging
 from typing import Optional
 
@@ -24,18 +26,39 @@ logger = logging.getLogger(__name__)
 # 密文标识前缀，便于幂等识别
 _CIPHER_PREFIX = "enc::"
 
+# 派生密钥时使用的固定盐值（仅用于 FIELD_ENCRYPTION_KEY 未配置的开发场景）
+_DERIVE_SALT = b"codesage-field-encryption-v1"
+_DERIVE_ITERATIONS = 100_000
+
 
 def _load_fernet() -> Fernet:
+    """
+    构造 Fernet 实例。
+
+    密钥来源优先级：
+    1. settings.FIELD_ENCRYPTION_KEY（显式配置，生产环境必须使用）；
+    2. 未配置时，基于 settings.JWT_SECRET 通过 PBKDF2 派生稳定密钥，
+       避免每次重启生成随机临时密钥导致历史加密数据无法解密
+       （此前的随机临时密钥方案在 uvicorn --reload / 容器重启后会丢失）。
+
+    注意：派生密钥仅用于开发兜底，生产环境应显式配置 FIELD_ENCRYPTION_KEY。
+    """
     key = settings.FIELD_ENCRYPTION_KEY.strip()
-    if not key:
-        # 开发模式：生成临时密钥并告警
-        tmp = Fernet.generate_key()
-        logger.warning(
-            "FIELD_ENCRYPTION_KEY 未配置，使用临时内存密钥，重启后将无法解密历史加密数据！"
-            "生产环境请通过环境变量配置。"
+    if key:
+        return Fernet(key.encode())
+
+    secret = (settings.JWT_SECRET or "codesage-default-fallback").encode("utf-8")
+    derived = base64.urlsafe_b64encode(
+        hashlib.pbkdf2_hmac(
+            "sha256", secret, _DERIVE_SALT, _DERIVE_ITERATIONS,
         )
-        return Fernet(tmp)
-    return Fernet(key.encode())
+    )
+    logger.warning(
+        "FIELD_ENCRYPTION_KEY 未配置，已基于 JWT_SECRET 派生稳定密钥（开发模式兜底）。"
+        "该密钥在 JWT_SECRET 不变的前提下跨重启可复用；"
+        "生产环境请通过环境变量显式配置 FIELD_ENCRYPTION_KEY。"
+    )
+    return Fernet(derived)
 
 
 # 模块级单例（首次访问时初始化）

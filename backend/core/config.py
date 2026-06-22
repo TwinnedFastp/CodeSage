@@ -37,7 +37,8 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
 
     # ---- 字段级加密密钥（Fernet，base64 urlsafe）----
-    # 留空时由 crypto 模块生成临时密钥（仅限开发，重启后无法解密历史数据）
+    # 留空时由 crypto 模块基于 JWT_SECRET 派生稳定密钥（开发兜底，跨重启可复用）。
+    # 生产环境务必显式配置一个高熵随机字符串，且变更后历史加密数据将无法解密。
     FIELD_ENCRYPTION_KEY: str = ""
 
     # ---- 邮箱验证 / SMTP 配置 ----

@@ -45,3 +45,4 @@ overview.md
 
 # 临时压测结果文件
 backend/tests/stress_result.txt
+plan.md

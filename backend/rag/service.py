@@ -91,9 +91,18 @@ class LightRAGService:
             if not settings.LIGHTRAG_ENABLED:
                 raise RuntimeError("LightRAG 当前未启用，请检查 LIGHTRAG_ENABLED 配置。")
 
-            api_key = provider_config.get("llm_api_key", "")
+            api_key = provider_config.get("llm_api_key") or ""
             if not api_key:
-                raise RuntimeError("缺少 LLM_API_KEY，无法调用大语言模型。")
+                # api_key 为空有两种成因：
+                #   1) 用户从未填写 API Key；
+                #   2) 字段加密密钥变更（如 FIELD_ENCRYPTION_KEY 变化或历史上使用过随机临时密钥），
+                #      导致 decrypt() 解密旧密文失败返回 None。
+                # 两种情况都需要用户在设置页重新填写并保存 API Key。
+                raise RuntimeError(
+                    "缺少 LLM_API_KEY，无法调用大语言模型。"
+                    "请前往「设置 → 模型供应商」重新填写并保存 API Key 后再试"
+                    "（若服务重启或加密密钥变更，旧密钥可能无法解密，需重新填写一次）。"
+                )
 
             base_url = provider_config.get("llm_base_url", "")
             llm_model = provider_config.get("llm_model", "")
