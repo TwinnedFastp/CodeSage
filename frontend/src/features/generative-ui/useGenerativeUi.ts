@@ -360,6 +360,9 @@ export function useGenerativeUi() {
         }
         timeline.sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime())
 
+        // 记录已显示的 assistant node id
+        const nodeIdsShown = new Set<string>()
+
         for (const item of timeline) {
           if (item.type === 'user') {
             messages.value.push({
@@ -377,7 +380,33 @@ export function useGenerativeUi() {
                 nodeId: item.data.node.id,
                 loading: false,
               })
+              nodeIdsShown.add(item.data.node.id)
             }
+          }
+        }
+
+        // 检测断线恢复：最后一条 assistant 消息在 chat_messages 中有 content
+        // 但对应 node 还未创建（流式过程中用户离开了）
+        const assistantMsgs = componentMsgs.filter((m: any) => m.role === 'assistant')
+        for (const am of assistantMsgs) {
+          if (!am.content || am.content.length < 10) continue
+          try {
+            const parsed = JSON.parse(am.content)
+            if (parsed._streaming_partial && parsed.components?.length) {
+              // 这是断线时保存的部分结果，直接恢复
+              const existingNode = nodes.find((n: any) =>
+                JSON.stringify(n.node.current_version?.content_json?.components) === JSON.stringify(parsed.components))
+              if (!existingNode) {
+                messages.value.push({
+                  id: `a-recover-${Date.now()}`,
+                  role: 'assistant',
+                  protocol: parsed as ComponentProtocol,
+                  loading: false,
+                })
+              }
+            }
+          } catch {
+            // 非 JSON 内容，跳过
           }
         }
       }

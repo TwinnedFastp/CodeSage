@@ -261,12 +261,11 @@ async def _component_streaming_with_persistence(
     provider_config: dict, use_rag: bool, mode: str,
 ):
     """
-    生成式组件 JSONL 流式管道：
+    生成式组件 JSONL 流式管道（支持断线续存）：
     1. 用户消息落库
     2. 读取历史 / RAG 检索
-    3. 流式生成 JSONL：每收到完整的一行 JSON 就推 partial_component 给前端
-       → 前端逐步渲染，实现"边生成边显示"
-    4. 流结束后创建 UiNode 持久化 + 推最终 component 事件
+    3. 流式生成 JSONL：每收到完整行推 partial_component 给前端
+    4. 即使客户端断开，后端继续完成生成并持久化（断线不丢数据）
     """
     await _persist_message(db, user_id, session_id, "user", user_message, render_mode="component")
     history = await _load_history_messages(db, user_id, session_id)
@@ -292,6 +291,17 @@ async def _component_streaming_with_persistence(
     page_meta: dict = {}
     actions_list: list[dict] = []
     streamed_count = 0
+    client_disconnected = False
+
+    # 安全 yield：客户端断开时只打标记不丢异常
+    def safe_yield(data: str):
+        nonlocal client_disconnected
+        if client_disconnected:
+            return
+        try:
+            return data
+        except GeneratorExit:
+            client_disconnected = True
 
     try:
         async for piece in stream_component_protocol_raw(
@@ -300,11 +310,16 @@ async def _component_streaming_with_persistence(
             if not piece:
                 continue
             raw_buffer += piece
-            yield f"data: {json.dumps({'streaming_raw': piece}, ensure_ascii=False)}\n\n"
+            if not client_disconnected:
+                try:
+                    yield f"data: {json.dumps({'streaming_raw': piece}, ensure_ascii=False)}\n\n"
+                except (GeneratorExit, ConnectionError, OSError) as e:
+                    client_disconnected = True
+                    logger.info("客户端断开连接，后端继续生成中 session_id=%s", session_id)
 
             # 检测完整行（以 \n 分隔的 JSONL）
             lines = raw_buffer.split("\n")
-            raw_buffer = lines.pop()  # 最后一段可能不完整，保留到下次
+            raw_buffer = lines.pop()
 
             for line in lines:
                 line = line.strip()
@@ -315,39 +330,68 @@ async def _component_streaming_with_persistence(
                 except json.JSONDecodeError:
                     continue
 
-                # 结束标记
                 if obj.get("_meta_end"):
                     continue
 
-                # 页面元信息行
                 if "page_type" in obj and "title" in obj and "type" not in obj:
                     page_meta = obj
-                    # 推标题给前端
-                    yield f"data: {json.dumps({'partial_title': obj.get('title', ''), 'page_type': obj.get('page_type', '')}, ensure_ascii=False)}\n\n"
+                    if not client_disconnected:
+                        try:
+                            yield f"data: {json.dumps({'partial_title': obj.get('title', ''), 'page_type': obj.get('page_type', '')}, ensure_ascii=False)}\n\n"
+                        except (GeneratorExit, ConnectionError, OSError):
+                            client_disconnected = True
                     continue
 
-                # 组件行：有 type 字段即视为组件
                 comp_type = obj.get("type")
                 if comp_type and comp_type in ALLOWED_COMPONENT_TYPES:
                     collected_components.append(obj)
                     streamed_count += 1
-                    yield f"data: {json.dumps({'partial_component': obj, 'index': streamed_count}, ensure_ascii=False)}\n\n"
+                    if not client_disconnected:
+                        try:
+                            yield f"data: {json.dumps({'partial_component': obj, 'index': streamed_count}, ensure_ascii=False)}\n\n"
+                        except (GeneratorExit, ConnectionError, OSError):
+                            client_disconnected = True
                     continue
 
-                # actions 行
                 if "actions" in obj:
                     actions_list = obj.get("actions", [])
+                    # actions 行到来时落库部分结果（断线恢复的关键数据）
+                    if collected_components:
+                        partial_protocol = {
+                            "page_type": page_meta.get("page_type", "analysis"),
+                            "title": page_meta.get("title", ""),
+                            "components": list(collected_components),
+                            "actions": list(actions_list),
+                            "meta": page_meta.get("meta", {}),
+                            "_streaming_partial": True,
+                        }
+                        try:
+                            await _persist_message(
+                                db, user_id, session_id, "assistant",
+                                json.dumps(partial_protocol, ensure_ascii=False),
+                                render_mode="component",
+                            )
+                        except Exception:
+                            logger.warning("部分结果落库失败 session_id=%s", session_id)
 
     except Exception as exc:
         logger.exception("流式生成组件协议失败 session_id=%s", session_id)
-        yield f"data: {json.dumps({'error': f'组件生成失败：{exc}'}, ensure_ascii=False)}\n\n"
-        yield "data: [DONE]\n\n"
+        if not client_disconnected:
+            try:
+                yield f"data: {json.dumps({'error': f'组件生成失败：{exc}'}, ensure_ascii=False)}\n\n"
+                yield "data: [DONE]\n\n"
+            except (GeneratorExit, ConnectionError, OSError):
+                pass
         return
 
-    # 流结束后：构建完整 ComponentProtocol 用于持久化和最终确认
+    # 流结束后：持久化完整结果
     if not collected_components:
-        yield f"data: {json.dumps({'error': '未能解析到有效组件'}, ensure_ascii=False)}\n\n"
-        yield "data: [DONE]\n\n"
+        if not client_disconnected:
+            try:
+                yield f"data: {json.dumps({'error': '未能解析到有效组件'}, ensure_ascii=False)}\n\n"
+                yield "data: [DONE]\n\n"
+            except (GeneratorExit, ConnectionError, OSError):
+                pass
         return
 
     full_protocol = {
@@ -395,27 +439,29 @@ async def _component_streaming_with_persistence(
     except Exception as exc:
         logger.exception("创建组件节点失败 session_id=%s", session_id)
         await db.rollback()
-        yield f"data: {json.dumps({'error': f'节点创建失败：{exc}'}, ensure_ascii=False)}\n\n"
-        yield "data: [DONE]\n\n"
+        if not client_disconnected:
+            try:
+                yield f"data: {json.dumps({'error': f'节点创建失败：{exc}'}, ensure_ascii=False)}\n\n"
+                yield "data: [DONE]\n\n"
+            except (GeneratorExit, ConnectionError, OSError):
+                pass
         return
 
-    # 落库 assistant 消息
+    # 落库 assistant 消息（完整结果覆盖之前的 partial）
     await _persist_message(
         db, user_id, session_id, "assistant",
         json.dumps(full_protocol, ensure_ascii=False),
         render_mode="component",
     )
 
-    # 推最终确认事件
-    yield f"data: {json.dumps({'node_id': node_id, 'streaming_done': True}, ensure_ascii=False)}\n\n"
-    yield f"data: {json.dumps({'component': full_protocol, 'node_id': node_id}, ensure_ascii=False)}\n\n"
-    yield "data: [DONE]\n\n"
-
-    # 推 node_id 和最终 component 给前端
-    yield f"data: {json.dumps({'node_id': str(node.id)}, ensure_ascii=False)}\n\n"
-    yield f"data: {json.dumps({'component': component_json}, ensure_ascii=False)}\n\n"
-
-    yield "data: [DONE]\n\n"
+    # 推最终事件（客户端断开时跳过，数据已在 DB 中）
+    if not client_disconnected:
+        try:
+            yield f"data: {json.dumps({'node_id': node_id, 'streaming_done': True}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'component': full_protocol, 'node_id': node_id}, ensure_ascii=False)}\n\n"
+            yield "data: [DONE]\n\n"
+        except (GeneratorExit, ConnectionError, OSError):
+            pass
 
 
 @router.post("/stream")
