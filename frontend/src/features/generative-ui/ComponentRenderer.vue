@@ -254,79 +254,90 @@ function onVersion(versionId: string) {
 .generative-renderer {
   display: flex;
   flex-direction: column;
-  gap: 0;
 }
 
 .renderer-title-section {
-  padding-bottom: 20px;
+  padding: 0 0 16px;
   margin-bottom: 4px;
+}
+
+.renderer-title-section h3 {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 20px;
+  color: #111;
+  line-height: 1.35;
+  font-weight: 700;
 }
 
 .renderer-components {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
 }
 
 /* Hero 全宽沉浸式 */
 .hero-full-width {
-  margin: -5px -6px 0;
-  border-radius: 12px;
+  margin: -4px -5px 0;
+  border-radius: 10px;
   overflow: hidden;
 }
 
 /* Grid 布局容器 */
 .grid-wrapper {
-  border-radius: 12px;
+  border-radius: 10px;
   overflow: hidden;
 }
 
 /* 图表全宽展示 */
 .chart-block {
-  background: white;
-  border-radius: 14px;
-  padding: 20px;
-  border: 1px solid #E8E6E1;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
-  transition: box-shadow 0.2s ease;
+  background: #FAFAFA;
+  border-radius: 12px;
+  padding: 18px;
+  border: 1px solid #F0EFE9;
 }
 .chart-block:hover {
-  box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  transition: box-shadow 0.2s ease;
 }
 
 /* 对比表全宽 */
 .compare-block {
-  border-radius: 14px;
+  border-radius: 12px;
   overflow: hidden;
 }
 
 /* 时间线全宽 */
 .timeline-block {
-  background: white;
-  border-radius: 14px;
-  padding: 24px;
-  border: 1px solid #E8E6E1;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  background: #FAFAFA;
+  border-radius: 12px;
+  padding: 20px;
+  border: 1px solid #F0EFE9;
 }
 
 /* Webpage 入口卡片 */
 .webpage-block {
-  border-radius: 14px;
+  border-radius: 12px;
   overflow: hidden;
 }
 
 /* 标准卡片包裹（text_block / list / stat / tabs / accordion 等） */
 .standard-card {
   background: white;
-  border-radius: 14px;
-  padding: 20px 22px;
-  border: 1px solid #E8E6E1;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+  border-radius: 10px;
+  padding: 18px 20px;
+  border: 1px solid #F2F0EA;
   transition: all 0.2s ease;
 }
 .standard-card:hover {
-  box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-  border-color: #D1CFCA;
+  border-color: #E0DED8;
+  box-shadow: 0 1px 6px rgba(0,0,0,0.04);
+}
+
+/* 操作按钮区 */
+.mt-5.pt-4.border-t {
+  margin-top: 18px !important;
+  padding-top: 14px !important;
+  border-top-color: #F0EFE9 !important;
 }
 
 .webpage-fade-enter-active,
