@@ -408,6 +408,62 @@ docker-compose up -d --build
 - 禁止在 Python 代码中硬编码 prompt 字符串
 - 通过 `from backend.sys_prompts import XXX_PROMPT` 引入使用
 
+## 知识库存储结构
+
+CodeSage 的知识库存储**完全委托给 LightRAG 库管理**。CodeSage 自身没有定义"文档表"或"分块表"的 ORM 模型，只保留了 `ai_providers` 配置表作为知识库运行的配置源。
+
+### LightRAG 自动创建的 11 张 PG 表
+
+这些表由 LightRAG 的 `PGVectorStorage` / `PGKVStorage` / `PGDocStatusStorage` 后端自动建表和管理：
+
+| 表名 | 存储后端 | 用途 |
+|------|----------|------|
+| `lightrag_vdb_chunks` | PGVectorStorage | **最重要**：文档分块的向量存储（`content_vector` 为 pgvector HNSW 索引） |
+| `lightrag_vdb_entity` | PGVectorStorage | 实体的向量表示 |
+| `lightrag_vdb_relation` | PGVectorStorage | 关系的向量表示 |
+| `lightrag_doc_chunks` | PGKVStorage | 文档分块元数据（关联 `doc_id`、`chunk_order_index`） |
+| `lightrag_doc_full` | PGKVStorage | 完整文档原文 |
+| `lightrag_doc_status` | PGDocStatusStorage | 文档处理生命周期（`pending`/`success`/`failed`） |
+| `lightrag_full_entities` | PGKVStorage | 完整实体数据（结构化 JSON） |
+| `lightrag_full_relations` | PGKVStorage | 完整关系数据 |
+| `lightrag_entity_chunks` | PGKVStorage | 实体-分块关联表 |
+| `lightrag_relation_chunks` | PGKVStorage | 关系-分块关联表 |
+| `lightrag_llm_cache` | PGKVStorage | LLM 调用缓存（避免重复调用） |
+
+### 知识图谱文件存储
+
+| 存储位置 | 格式 | 用途 |
+|---------|------|------|
+| `docker_data/lightrag/user_{uid}/graph_chunk_entity_relation.graphml` | GraphML XML | 知识图谱（实体-关系图，NetworkX 持久化） |
+
+**图谱节点属性**：`entity_id` / `entity_type` / `description` / `source_id` / `file_path` / `created_at`
+**图谱边属性**：`weight` / `description` / `keywords` / `source_id`
+
+### 相关 PG 扩展
+
+```sql
+CREATE EXTENSION IF NOT EXISTS vector;    -- pgvector 向量索引
+CREATE EXTENSION IF NOT EXISTS pgcrypto;  -- gen_random_uuid()
+```
+
+Docker 使用镜像：`pgvector/pgvector:pg15`（预装 pgvector 的 PostgreSQL 15）
+
+### 数据流
+
+```
+用户上传文件 → backend/rag/endpoints.py (API)
+  → backend/rag/parser.py (文本提取)
+  → backend/rag/service.py (LightRAGService，按用户缓存多实例)
+    → LightRAG.ainsert()
+      ├── 分块 → lightrag_doc_chunks
+      ├── 向量化 → lightrag_vdb_chunks (pgvector HNSW)
+      ├── 实体抽取 → lightrag_vdb_entity + lightrag_full_entities
+      ├── 关系抽取 → lightrag_vdb_relation + lightrag_full_relations
+      └── 图谱构建 → .graphml 文件
+```
+
+> **注意**：当前版本知识库文档的原始文件**没有**通过 MinIO 持久化，仅上传时全文提取后存入 LightRAG 的 PG 表中。MinIO 目前仅用于头像存储。
+
 ## 常见问题排查
 
 | 现象 | 根因 | 修复 |
@@ -416,7 +472,7 @@ docker-compose up -d --build
 | 头像上传失败 | `.env` 缺 S3 配置 | 补全 `S3_ENABLED=true` 等配置 |
 | AI 重生成 500 | 模型名不存在（如 `qwen3.7-max`） | `UPDATE ai_providers SET llm_model='qwen-plus'` |
 | 生成式历史丢失 | 未调 `loadSessionHistory` | GenerativePanel 切换会话时加载 UiNode |
-| 生成式面板不滚动 | flex 子元素滚动需父级 `overflow-hidden` | 根容器加 `overflow-hidden` |
+| 生成式面板不滚动 | flex 子项滚动需 `min-h-0`，父级避免 `overflow-hidden` | flex 子项 `overflow-y-auto` 同时加 `min-h-0` |
 | 左侧用户信息不刷新 | 原生 `<img>` 缓存 | 改用 `el-avatar` + URL 加时间戳 |
 
 ## License

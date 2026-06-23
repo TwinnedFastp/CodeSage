@@ -275,6 +275,32 @@ CodeSage/
 - **查询超时**: mix/hybrid 图谱推理慢，超时 60s
 - **多轮对话**: `conversation_history` 传给 LightRAG 提升检索准确率
 
+### 3.3.1 知识库数据库存储结构（LightRAG 管理，非 CodeSage ORM）
+
+> CodeSage **自身没有定义知识库文档/分块的 ORM 模型**。以下 11 张表全部由 LightRAG 库自动创建和管理。CodeSage 仅保留 `ai_providers` 表作为配置源。
+
+| 表名 | 存储后端 | 关键字段 | 用途 |
+|------|----------|---------|------|
+| **`lightrag_vdb_chunks`** | PGVectorStorage | `content`, `content_vector` (vector), `workspace` | **核心表**：分块文本 + pgvector HNSW 索引 |
+| `lightrag_vdb_entity` | PGVectorStorage | `entity_name`, `content_vector`, `workspace` | 实体向量存储 |
+| `lightrag_vdb_relation` | PGVectorStorage | `content_vector`, `workspace` | 关系向量存储 |
+| `lightrag_doc_chunks` | PGKVStorage | `id`, `doc_id`, `content`, `chunk_order_index`, `workspace` | 文档分块元数据 |
+| `lightrag_doc_full` | PGKVStorage | `id`, `content`, `workspace` | 完整文档原文 |
+| `lightrag_doc_status` | PGDocStatusStorage | `id`, `status` (pending/success/failed), `content_summary`, `content_length`, `workspace` | 文档处理生命周期 |
+| `lightrag_full_entities` | PGKVStorage | 结构化 JSON | 完整实体数据 |
+| `lightrag_full_relations` | PGKVStorage | 结构化 JSON | 完整关系数据 |
+| `lightrag_entity_chunks` | PGKVStorage | `entity_id` ↔ `chunk_id` | 实体-分块关联 |
+| `lightrag_relation_chunks` | PGKVStorage | `relation_id` ↔ `chunk_id` | 关系-分块关联 |
+| `lightrag_llm_cache` | PGKVStorage | Key-Value | LLM 调用去重缓存 |
+
+**知识图谱文件**：`docker_data/lightrag/user_{uid}/graph_chunk_entity_relation.graphml`（NetworkX GraphML）
+
+**PG 扩展依赖**：`pgvector/pgvector:pg15` 镜像，`CREATE EXTENSION vector;`
+
+**数据流**：`用户上传 → parser.py 文本提取 → service.py → LightRAG.ainsert() → 分块+向量化+实体抽取+图谱构建 → 11张PG表 + .graphml`
+
+> 原始文件**未**通过 MinIO 持久化（MinIO 仅用于头像），文本提取后存入 LightRAG 的 PG 表。
+
 ### 3.4 MinIO 模块特殊规则
 
 - **所有 S3/MinIO 相关代码必须在 `backend/minio/` 目录内**，从 `auth_service` 抽离
@@ -311,7 +337,7 @@ CodeSage/
 - **自定义滚动条**: 全局 `.custom-scrollbar` 样式（细窄、透明）
 - **图标**: 使用 `@element-plus/icons-vue`，不引入额外图标库
 - **头像组件**: 统一使用 `el-avatar`，URL 加时间戳破缓存
-- **flex 滚动**: 子元素 `overflow-y-auto` 需父级 `overflow-hidden` 才生效
+- **flex 滚动**: flex 子项 `overflow-y-auto` 必须同时加 `min-h-0`（否则无法收缩触发滚动），且父级避免 `overflow-hidden` 覆盖
 
 ---
 
@@ -551,7 +577,7 @@ docker logs codesage-minio -f --tail 50
 6. **前端 token 持久化**: 存在 localStorage，axios 请求拦截器自动注入 Authorization header
 7. **长任务超时**: 知识库上传等大任务接口前端必须设 180s 超时（默认 30s 不够后端 60s+ 处理）
 8. **模型名验证**: 阿里百炼 `qwen3.7-max` 不存在，用 `qwen-plus`/`qwen-max`；其他供应商同理先查文档
-9. **flex 滚动**: 子元素 `overflow-y-auto` 需父级 `overflow-hidden` 才生效，否则滚动条不出现
+9. **flex 滚动**: flex 子项 `overflow-y-auto` 必须同时加 `min-h-0`（否则无法收缩触发滚动），且父级避免 `overflow-hidden` 覆盖
 10. **头像缓存**: 浏览器会缓存图片，URL 加 `?_t=时间戳` 破缓存；统一用 `el-avatar` 组件
 11. **render_mode 区分**: `chat_messages.render_mode` 为 `component` 时前端 `useChat` 过滤，由 `useGenerativeUi` 单独加载
 12. **prompt 重建**: 修改 `sys_prompts/*.md` 后必须重建 backend 镜像（除非挂载了 volume）
