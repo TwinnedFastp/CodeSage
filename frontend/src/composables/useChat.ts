@@ -123,8 +123,6 @@ export function useChat(
     const textarea = document.querySelector('textarea')
     if (textarea) textarea.style.height = 'auto'
 
-    const currentImages = [...pendingImages.value]
-    const currentDocuments = [...pendingDocuments.value]
     pendingImages.value = []
     pendingDocuments.value = []
 

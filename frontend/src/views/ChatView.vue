@@ -5,7 +5,7 @@ import { ElMessage } from 'element-plus'
 import {
   ChatDotRound, Operation, Plus, User as UserIcon, Monitor, Setting,
   Fold, Expand, Promotion, SwitchButton, Collection, Files, Cpu, Coin,
-  Picture, Document, Close, ZoomIn,
+  Picture, Document, Close,
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useResponsive } from '@/composables/useResponsive'
