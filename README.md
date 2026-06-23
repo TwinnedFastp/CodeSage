@@ -349,6 +349,7 @@ curl http://localhost:8000/api/v1/nodes/by-session/{session_id} \
 
 ### 知识库
 
+### 对话
 ```bash
 # 上传文档
 curl -X POST http://localhost:8000/api/v1/rag/upload-file \
