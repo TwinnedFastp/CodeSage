@@ -70,4 +70,8 @@ export interface DisplayMessage {
   role: 'user' | 'assistant'
   content: string
   pending?: boolean
+  /** 标记该消息来自生成式组件模式（用于显示特殊样式/提示） */
+  _isComponent?: boolean
+  /** 原始 JSON 内容（用于切换到组件模式时恢复） */
+  _rawContent?: string
 }

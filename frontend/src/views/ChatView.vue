@@ -324,6 +324,10 @@ function onGenSessionCreated(id: string) {
               <el-icon :size="14"><component :is="msg.role === 'user' ? UserIcon : ChatDotRound" /></el-icon>
             </div>
             <div :class="['max-w-[85%] leading-relaxed text-[15px]', msg.role === 'user' ? 'bg-[#F3F2EE] text-[#111111] px-5 py-3.5 rounded-2xl rounded-tr-sm' : 'text-[#111111] pt-1']">
+              <div v-if="msg._isComponent && msg.role === 'assistant'" class="mb-2 flex items-center gap-1.5 text-[11px] text-[#3B82F6] font-medium">
+                <el-icon :size="12"><Cpu /></el-icon>
+                生成式界面 — 切换到「生成式」模式查看完整页面
+              </div>
               <div class="whitespace-pre-wrap font-sans">{{ msg.content }}</div>
               <div v-if="isTyping && msg.id === messages[messages.length-1].id && msg.role === 'assistant'" class="inline-block w-2 h-4 bg-[#111111] animate-pulse-cursor ml-1 align-middle"></div>
             </div>

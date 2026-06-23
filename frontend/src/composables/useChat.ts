@@ -30,14 +30,32 @@ export function useChat(
     loadingMessages.value = true
     try {
       const list = await convApi.listMessages(sessionId, 100, 0)
-      // 文本页面只显示 render_mode='text' 的消息，跳过 component 消息（生成式页面的）
-      messages.value = list
-        .filter(m => m.render_mode !== 'component')
-        .map(m => ({
+      messages.value = list.map(m => {
+        const base = {
           id: m.message_id,
           role: m.role === 'user' ? 'user' : 'assistant',
-          content: m.content,
-        }))
+        }
+
+        // component 模式的消息：从 JSON 中提取可读文本作为 content 显示
+        if (m.render_mode === 'component' && m.content) {
+          try {
+            const parsed = JSON.parse(m.content)
+            // 提取标题或第一个 text_block 的内容
+            const title = parsed.title || ''
+            const firstText = parsed.components?.find((c: any) => c.type === 'text_block')
+            const textContent = firstText?.props?.content || ''
+            const summary = title || textContent || '[生成式界面内容]'
+            return { ...base, content: summary, _isComponent: true, _rawContent: m.content }
+          } catch {
+            // JSON 解析失败，截取前 200 字符显示
+            return { ...base, content: m.content.slice(0, 200), _isComponent: true }
+          }
+        }
+
+        // 普通 text 模式消息直接显示
+        return { ...base, content: m.content }
+      })
+
       if (messages.value.length === 0) messages.value = [{ ...WELCOME_MSG }]
       await scrollToBottom()
     } catch (err: any) {
