@@ -7,6 +7,14 @@ import CodeBlock from './components/CodeBlock.vue'
 import QuoteBlock from './components/QuoteBlock.vue'
 import TableBlock from './components/TableBlock.vue'
 import WebPageBlock from './components/WebPageBlock.vue'
+import ChartBlock from './components/ChartBlock.vue'
+import TimelineBlock from './components/TimelineBlock.vue'
+import TabBlock from './components/TabBlock.vue'
+import AccordionBlock from './components/AccordionBlock.vue'
+import StatBlock from './components/StatBlock.vue'
+import StepsBlock from './components/StepsBlock.vue'
+import CompareBlock from './components/CompareBlock.vue'
+import GalleryBlock from './components/GalleryBlock.vue'
 import UnknownBlock from './components/UnknownBlock.vue'
 
 export const componentRegistry: Record<string, any> = {
@@ -18,6 +26,14 @@ export const componentRegistry: Record<string, any> = {
   quote: QuoteBlock,
   table: TableBlock,
   webpage: WebPageBlock,
+  chart: ChartBlock,
+  timeline: TimelineBlock,
+  tabs: TabBlock,
+  accordion: AccordionBlock,
+  stat: StatBlock,
+  steps: StepsBlock,
+  compare: CompareBlock,
+  gallery: GalleryBlock,
 }
 
 export const ALLOWED_TYPES = Object.keys(componentRegistry)

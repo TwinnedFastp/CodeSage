@@ -14,6 +14,9 @@ export interface GenerativeMessage {
   currentVersionNo?: number
   loading?: boolean
   error?: boolean
+  // 流式思考阶段：实时显示 AI 生成的原始文本
+  thinkingRaw?: string
+  thinkingDone?: boolean
 }
 
 export function useGenerativeUi() {
@@ -52,7 +55,7 @@ export function useGenerativeUi() {
     const userMsgId = `u-${Date.now()}`
     const assistantId = `a-${Date.now()}`
     messages.value.push({ id: userMsgId, role: 'user', content: userText })
-    messages.value.push({ id: assistantId, role: 'assistant', content: '', loading: true })
+    messages.value.push({ id: assistantId, role: 'assistant', content: '', loading: true, thinkingRaw: '', thinkingDone: false })
     streaming.value = true
 
     let backendSessionId: string | null = sessionId || null
@@ -112,18 +115,18 @@ export function useGenerativeUi() {
               backendSessionId = parsed.session_id as string
               continue
             }
-            // 流式原始文本片段：AI 正在生成组件 JSON，实时显示
+            // 流式原始文本片段：AI 正在生成组件 JSON，写入思考区实时显示
             if (parsed.streaming_raw) {
               const m = findAssistant(assistantId)
               if (m && !receivedComponent) {
-                m.content = (m.content || '') + parsed.streaming_raw
+                m.thinkingRaw = (m.thinkingRaw || '') + parsed.streaming_raw
               }
               continue
             }
             if (parsed.content) {
               const m = findAssistant(assistantId)
               if (m && !receivedComponent) {
-                m.content = (m.content || '') + parsed.content
+                m.thinkingRaw = (m.thinkingRaw || '') + parsed.content
               }
               continue
             }
@@ -140,6 +143,7 @@ export function useGenerativeUi() {
                 m.protocol = parsed.component as ComponentProtocol
                 m.content = ''
                 m.loading = false
+                m.thinkingDone = true
               }
               continue
             }
@@ -150,7 +154,10 @@ export function useGenerativeUi() {
       }
 
       const m = findAssistant(assistantId)
-      if (m) m.loading = false
+      if (m) {
+        m.loading = false
+        m.thinkingDone = true
+      }
       if (m?.nodeId) {
         await refreshVersionsFor(m.nodeId, assistantId)
       }
@@ -159,6 +166,7 @@ export function useGenerativeUi() {
       if (m) {
         m.loading = false
         m.error = true
+        m.thinkingDone = true
         m.content = `抱歉，生成式回复时发生错误：${err?.message || '未知错误'}`
       }
       console.error('streamComponentChat error', err)

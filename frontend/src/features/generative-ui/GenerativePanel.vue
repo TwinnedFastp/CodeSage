@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { ChatDotRound, Promotion, User as UserIcon, Link } from '@element-plus/icons-vue'
 import { useGenerativeUi } from './useGenerativeUi'
 import ComponentRenderer from './ComponentRenderer.vue'
+import ThinkingBlock from './components/ThinkingBlock.vue'
 
 const props = defineProps<{
   sessionId: string | null
@@ -112,8 +113,16 @@ onMounted(() => {
             class="max-w-[85%] bg-[#F3F2EE] text-[#111111] px-5 py-3.5 rounded-2xl rounded-tr-sm text-[15px] leading-relaxed whitespace-pre-wrap"
           >{{ msg.content }}</div>
 
-          <!-- 助手消息：组件协议 / 流式文本 / 加载占位 -->
-          <div v-else class="max-w-[92%] w-full pt-1">
+          <!-- 助手消息：流式思考区 / 组件协议 / 加载占位 -->
+          <div v-else class="max-w-[92%] w-full pt-1 space-y-3">
+            <!-- 流式思考阶段：显示 ThinkingBlock（有原始文本且未收到组件时） -->
+            <ThinkingBlock
+              v-if="msg.thinkingRaw && !msg.protocol"
+              :raw-text="msg.thinkingRaw"
+              :done="msg.thinkingDone"
+            />
+
+            <!-- 正式组件渲染（收到 component 事件后） -->
             <ComponentRenderer
               v-if="msg.protocol"
               :protocol="msg.protocol"
@@ -125,6 +134,14 @@ onMounted(() => {
               @function-call="(p) => p.function_name && callFunction(p.function_name, p.params || {}, p.target_id || msg.nodeId)"
               @switch-version="(p) => msg.nodeId && switchVersion(msg.nodeId, p.versionId)"
             />
+
+            <!-- 思考完成后仍展示折叠的思考区（用户可展开查看生成过程） -->
+            <ThinkingBlock
+              v-if="msg.protocol && msg.thinkingRaw"
+              :raw-text="msg.thinkingRaw"
+              :done="true"
+            />
+
             <div v-if="msg.nodeId" class="mt-2">
               <el-button
                 size="small"
@@ -136,7 +153,8 @@ onMounted(() => {
                 查看详情
               </el-button>
             </div>
-            <div v-else class="text-[15px] leading-relaxed text-[#111111] flex items-center gap-2">
+            <!-- 纯文本错误兜底（无思考文本时） -->
+            <div v-if="!msg.protocol && !msg.thinkingRaw && msg.content" class="text-[15px] leading-relaxed text-[#111111] flex items-center gap-2">
               <span
                 v-if="msg.loading"
                 class="inline-block w-2 h-4 bg-[#111111] animate-pulse-cursor align-middle"

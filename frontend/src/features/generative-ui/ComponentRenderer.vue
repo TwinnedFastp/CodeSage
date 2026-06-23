@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { Refresh, FullScreen, Close } from '@element-plus/icons-vue'
 import { componentRegistry } from './componentRegistry'
 import UnknownBlock from './components/UnknownBlock.vue'
@@ -75,6 +75,15 @@ function onOpenWebpageAction(action: ComponentAction) {
 function closeWebpageViewer() {
   showWebpageViewer.value = false
 }
+
+// Esc 键关闭全屏查看器
+function onKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape' && showWebpageViewer.value) {
+    closeWebpageViewer()
+  }
+}
+onMounted(() => window.addEventListener('keydown', onKeydown))
+onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
 function onVersion(versionId: string) {
   emit('switch-version', { versionId })
@@ -159,33 +168,33 @@ function onVersion(versionId: string) {
       </el-button>
     </div>
 
-    <!-- 全屏 HTML 网页查看器 -->
+    <!-- 全屏 HTML 网页查看器（真正全屏，覆盖整个视口） -->
     <Teleport to="body">
       <transition name="webpage-fade">
         <div
           v-if="showWebpageViewer"
-          class="fixed inset-0 z-[9999] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4"
-          @click.self="closeWebpageViewer"
+          class="fixed inset-0 z-[9999] bg-white flex flex-col"
         >
-          <div class="relative w-full h-full max-w-[1400px] bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col">
-            <!-- 顶部栏 -->
-            <div class="shrink-0 flex items-center justify-between px-5 py-3 border-b border-[#E8E6E1] bg-white">
-              <div class="flex items-center gap-2 min-w-0">
-                <el-icon :size="16" class="text-[#111] shrink-0"><FullScreen /></el-icon>
-                <span class="font-serif text-[15px] text-[#111] truncate">{{ webpageTitle }}</span>
-              </div>
-              <el-button text circle size="small" @click="closeWebpageViewer" title="关闭">
-                <el-icon :size="18"><Close /></el-icon>
+          <!-- 顶部工具栏 -->
+          <div class="shrink-0 flex items-center justify-between px-6 h-14 border-b border-[#E8E6E1] bg-white">
+            <div class="flex items-center gap-3 min-w-0">
+              <el-icon :size="18" class="text-[#111] shrink-0"><FullScreen /></el-icon>
+              <span class="font-serif text-[16px] text-[#111] truncate">{{ webpageTitle }}</span>
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+              <span class="text-[11px] text-[#999] hidden md:block">按 Esc 关闭</span>
+              <el-button text circle size="default" @click="closeWebpageViewer" title="关闭 (Esc)">
+                <el-icon :size="20"><Close /></el-icon>
               </el-button>
             </div>
-            <!-- HTML 内容（iframe srcdoc 隔离） -->
-            <iframe
-              :srcdoc="webpageContent"
-              class="flex-1 w-full border-0 bg-white"
-              sandbox="allow-scripts allow-same-origin"
-              title="webpage-viewer"
-            />
           </div>
+          <!-- HTML 内容（iframe srcdoc 隔离，铺满剩余空间） -->
+          <iframe
+            :srcdoc="webpageContent"
+            class="flex-1 w-full border-0 bg-white"
+            sandbox="allow-scripts allow-same-origin"
+            title="webpage-viewer"
+          />
         </div>
       </transition>
     </Teleport>

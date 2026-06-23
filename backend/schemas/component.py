@@ -21,6 +21,14 @@ ALLOWED_COMPONENT_TYPES = {
     "quote",
     "table",
     "webpage",
+    "chart",
+    "timeline",
+    "tabs",
+    "accordion",
+    "stat",
+    "steps",
+    "compare",
+    "gallery",
 }
 
 # 允许的 action 类型
