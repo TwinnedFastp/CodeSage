@@ -133,6 +133,11 @@ const maskedEmail = computed(() => {
   return domain ? `${name[0]}***@${domain}` : e
 })
 const displayName = computed(() => auth.user?.username || maskedEmail.value || 'CodeSage 用户')
+// 头像 URL 加时间戳破浏览器缓存，确保更新后立即刷新
+const avatarUrl = computed(() => {
+  const url = auth.user?.avatar_url
+  return url ? (url.includes('?') ? `${url}&_t=${Date.now()}` : `${url}?_t=${Date.now()}`) : ''
+})
 const avatarInitial = computed(() => displayName.value.slice(0, 1).toUpperCase())
 watch(() => auth.user?.username, (username) => {
   profileForm.value.username = username || ''
@@ -215,8 +220,8 @@ function onAvatarInput(event: Event) {
         <div class="flex items-center gap-3 mb-3">
           <el-avatar
             :size="36"
-            :src="auth.user?.avatar_url"
-            :style="{ backgroundColor: auth.user?.avatar_url ? 'transparent' : '#E8E6E1', color: '#555', fontSize: '14px', fontWeight: 600 }"
+            :src="avatarUrl"
+            :style="{ backgroundColor: avatarUrl ? 'transparent' : '#E8E6E1', color: '#555', fontSize: '14px', fontWeight: 600 }"
           >
             {{ displayName.slice(0, 1).toUpperCase() }}
           </el-avatar>
@@ -303,9 +308,9 @@ function onAvatarInput(event: Event) {
                 <div class="relative group cursor-pointer" @click="avatarInput?.click()">
                   <el-avatar
                     :size="80"
-                    :src="auth.user?.avatar_url"
+                    :src="avatarUrl"
                     class="!rounded-2xl shadow-md ring-2 ring-[#E8E6E1] transition-all duration-300 group-hover:ring-[#111] group-hover:shadow-lg shrink-0"
-                    :style="{ backgroundColor: auth.user?.avatar_url ? 'transparent' : '#111', color: 'white', fontSize: '28px', fontWeight: 600 }"
+                    :style="{ backgroundColor: avatarUrl ? 'transparent' : '#111', color: 'white', fontSize: '28px', fontWeight: 600 }"
                   >
                     {{ avatarInitial }}
                   </el-avatar>

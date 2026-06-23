@@ -85,8 +85,8 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="flex-1 flex flex-col relative min-w-0 bg-[#FAFAFA] overflow-hidden">
-    <div ref="container" class="flex-1 overflow-y-auto pt-24 pb-44 px-4 md:px-12 scroll-smooth custom-scrollbar">
+  <div class="flex-1 flex flex-col relative min-w-0 bg-[#FAFAFA]">
+    <div ref="container" class="flex-1 overflow-y-auto pt-24 pb-56 px-4 md:px-12 scroll-smooth custom-scrollbar">
       <div class="max-w-3xl mx-auto space-y-10 pb-6">
         <div v-if="messages.length === 0" class="text-center py-16">
           <div class="w-12 h-12 mx-auto mb-4 rounded-full bg-[#111111] text-[#FAFAFA] flex items-center justify-center">
@@ -150,7 +150,7 @@ onMounted(() => {
       </div>
     </div>
 
-    <footer class="absolute bottom-0 left-0 right-0 p-4 md:p-8 bg-gradient-to-t from-[#FAFAFA] via-[#FAFAFA] to-transparent pointer-events-none z-10">
+    <footer class="absolute bottom-0 left-0 right-0 p-4 md:p-8 bg-gradient-to-t from-[#FAFAFA] via-[#FAFAFA] to-transparent pointer-events-none z-20">
       <div class="max-w-3xl mx-auto relative pointer-events-auto">
         <div class="bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-[#E8E6E1] p-2 pr-14 relative transition-all duration-300 focus-within:shadow-[0_8px_30px_rgb(0,0,0,0.08)] focus-within:border-[#D1CFCA]">
           <textarea
