@@ -31,9 +31,10 @@ export function useChat(
     try {
       const list = await convApi.listMessages(sessionId, 100, 0)
       messages.value = list.map(m => {
+        const role: 'user' | 'assistant' = m.role === 'user' ? 'user' : 'assistant'
         const base = {
           id: m.message_id,
-          role: m.role === 'user' ? 'user' : 'assistant',
+          role,
         }
 
         // component 模式的消息：从 JSON 中提取可读文本作为 content 显示
@@ -44,7 +45,7 @@ export function useChat(
             const title = parsed.title || ''
             const firstText = parsed.components?.find((c: any) => c.type === 'text_block')
             const textContent = firstText?.props?.content || ''
-            const summary = title || textContent || '[生成式界面内容]'
+            const summary = (title || textContent || '[生成式界面内容]') as string
             return { ...base, content: summary, _isComponent: true, _rawContent: m.content }
           } catch {
             // JSON 解析失败，截取前 200 字符显示
