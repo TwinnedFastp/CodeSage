@@ -39,11 +39,6 @@ function onItemClick(item: CompareItem, index: number) {
 function isClickable(value: any): boolean {
   return typeof value === 'object' && value !== null && value.html
 }
-
-// 所有行都视为可交互
-function isRowInteractive(): boolean {
-  return true
-}
 </script>
 
 <template>

@@ -54,7 +54,7 @@ function onRowClick(row: CellValue[], index: number) {
             :key="ri"
             class="table-row interactive-row"
             :class="{ 'has-action': row.some((cell: CellValue) => typeof cell === 'object' && cell !== null && (cell as CellData)?.html) }"
-            @click="onRowClick(row, ri)"
+            @click="onRowClick(row, Number(ri))"
           >
             <td
               v-for="(cell, ci) in row"
