@@ -281,7 +281,7 @@ function onGenSessionCreated(id: string) {
     </el-drawer>
 
     <!-- 主聊天区域 -->
-    <main class="flex-1 flex flex-col relative min-w-0 bg-[#FAFAFA]">
+    <main class="flex-1 flex flex-col relative min-w-0 min-h-0 overflow-hidden bg-[#FAFAFA]">
       <header class="h-20 flex items-center px-6 justify-between absolute top-0 left-0 right-0 z-10 bg-gradient-to-b from-[#FAFAFA] to-transparent">
         <div class="flex items-center gap-4 min-w-0">
           <button v-if="isMobile" @click="drawerVisible = true" class="p-2 -ml-2 text-[#555555]"><el-icon :size="22"><Operation /></el-icon></button>
