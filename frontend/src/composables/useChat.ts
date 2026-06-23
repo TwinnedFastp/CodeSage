@@ -30,11 +30,14 @@ export function useChat(
     loadingMessages.value = true
     try {
       const list = await convApi.listMessages(sessionId, 100, 0)
-      messages.value = list.map(m => ({
-        id: m.message_id,
-        role: m.role === 'user' ? 'user' : 'assistant',
-        content: m.content,
-      }))
+      // 文本页面只显示 render_mode='text' 的消息，跳过 component 消息（生成式页面的）
+      messages.value = list
+        .filter(m => m.render_mode !== 'component')
+        .map(m => ({
+          id: m.message_id,
+          role: m.role === 'user' ? 'user' : 'assistant',
+          content: m.content,
+        }))
       if (messages.value.length === 0) messages.value = [{ ...WELCOME_MSG }]
       await scrollToBottom()
     } catch (err: any) {

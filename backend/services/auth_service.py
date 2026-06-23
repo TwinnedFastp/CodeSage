@@ -17,10 +17,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-import boto3
-from botocore.client import Config as BotoConfig
-from botocore.exceptions import ClientError
-
+# boto3 / botocore 已迁移到 backend.minio 模块，这里不再直接导入
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -275,30 +272,9 @@ async def login(email: str, password: str, client_ip: Optional[str], db: AsyncSe
 
 
 def _sanitize_avatar_filename(filename: str) -> str:
-    name = filename.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
-    name = re.sub(r"[^A-Za-z0-9._-]+", "-", name).strip(".-_")
-    return name or "avatar"
-
-
-def _get_s3_client():
-    if not settings.S3_ENABLED or not settings.S3_ENDPOINT_URL or not settings.S3_ACCESS_KEY_ID or not settings.S3_SECRET_ACCESS_KEY:
-        raise AuthError("头像存储未启用", code="s3_disabled", status=503)
-    return boto3.client(
-        "s3",
-        endpoint_url=settings.S3_ENDPOINT_URL,
-        aws_access_key_id=settings.S3_ACCESS_KEY_ID,
-        aws_secret_access_key=settings.S3_SECRET_ACCESS_KEY,
-        region_name=settings.S3_REGION,
-        use_ssl=settings.S3_USE_SSL,
-        config=BotoConfig(signature_version="s3v4"),
-    )
-
-
-def _build_avatar_public_url(object_key: str) -> str:
-    base = settings.S3_PUBLIC_BASE_URL.rstrip("/")
-    if base:
-        return f"{base}/{settings.S3_BUCKET_AVATARS}/{object_key}"
-    return object_key
+    """头像文件名清理（委托给 minio 模块）。"""
+    from backend.minio import sanitize_filename
+    return sanitize_filename(filename) or "avatar"
 
 
 def _default_avatar_url(user_id: int) -> str:
@@ -326,33 +302,26 @@ async def update_profile(user: User, username: str, db: AsyncSession) -> User:
 
 
 async def issue_avatar_upload(user: User, filename: str, content_type: str) -> dict:
+    """
+    生成头像预签名上传 URL（委托给 minio 模块）。
+
+    object_key 格式：avatars/{user_id}/{uuid}-{filename}
+    """
+    from backend.minio import generate_presigned_upload_url, is_s3_enabled
+
+    if not is_s3_enabled():
+        raise AuthError("头像存储未启用，请检查 MinIO/S3 配置", code="s3_disabled", status=503)
+
     object_key = f"avatars/{user.id}/{uuid.uuid4().hex}-{_sanitize_avatar_filename(filename)}"
-    client = _get_s3_client()
     try:
-        upload_url = await asyncio.to_thread(
-            client.generate_presigned_url,
-            ClientMethod="put_object",
-            Params={
-                "Bucket": settings.S3_BUCKET_AVATARS,
-                "Key": object_key,
-                "ContentType": content_type,
-            },
-            ExpiresIn=settings.S3_PRESIGN_EXPIRE_SECONDS,
+        result = await generate_presigned_upload_url(
+            object_key=object_key,
+            content_type=content_type,
+            bucket=settings.S3_BUCKET_AVATARS,
         )
-    except ClientError as exc:
-        logger.exception("生成头像上传链接失败 user_id=%s", user.id)
-        raise AuthError("生成头像上传链接失败", code="s3_error", status=502) from exc
-
-    public_base = settings.S3_PUBLIC_BASE_URL.rstrip("/")
-    if public_base:
-        upload_url = upload_url.replace(settings.S3_ENDPOINT_URL.rstrip("/"), public_base)
-
-    return {
-        "upload_url": upload_url,
-        "object_key": object_key,
-        "public_url": _build_avatar_public_url(object_key),
-        "expires_in": settings.S3_PRESIGN_EXPIRE_SECONDS,
-    }
+        return result
+    except RuntimeError as exc:
+        raise AuthError(str(exc), code="s3_error", status=502) from exc
 
 
 async def commit_avatar(user: User, object_key: str, avatar_url: str, db: AsyncSession) -> User:

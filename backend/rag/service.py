@@ -339,7 +339,8 @@ class LightRAGService:
         else:
             await asyncio.to_thread(rag.insert, text)
         # ainsert 是异步管道，立即返回不代表处理完成，需轮询 doc_status 等真实结果
-        return await self._wait_for_latest_doc_status(user_id, provider_config, timeout=60.0)
+        # 超时 120s：LLM 实体抽取+向量化在大文档时可能较慢，60s 不够
+        return await self._wait_for_latest_doc_status(user_id, provider_config, timeout=120.0)
 
     async def insert_file(
         self, user_id: int, provider_config: dict,
@@ -360,18 +361,29 @@ class LightRAGService:
     async def query(
         self, user_id: int, provider_config: dict,
         question: str, mode: str = "hybrid",
+        conversation_history: list[dict] | None = None,
+        only_need_context: bool = False,
+        user_prompt: str | None = None,
+        stream: bool = False,
     ) -> str:
         """
         查询 LightRAG 知识库。
 
-        mode 取值：
+        mode 取值（对齐 LightRAG-main 原生支持）：
         - naive：普通向量检索
         - local：局部实体关系
         - global：全局图谱关系
-        - hybrid：混合模式（默认，效果最好）
+        - hybrid：混合模式（local + global）
+        - mix：知识图谱 + 向量检索（最全面，LightRAG-main 新增）
+        - bypass：跳过检索直接调 LLM
 
-        加 30 秒超时保护，避免 hybrid 模式下图谱推理卡死整个流式响应。
-        超时抛 asyncio.TimeoutError，由调用方决定降级策略。
+        新增参数（对齐 LightRAG-main QueryParam）：
+        - conversation_history: 多轮对话历史，传给 LightRAG 让它理解上下文
+        - only_need_context: 只返回检索到的上下文，不调 LLM 生成回复
+        - user_prompt: 用户自定义 prompt 注入，影响 LLM 回复风格
+        - stream: 是否流式返回（当前返回完整字符串，流式由调用方处理）
+
+        加 60 秒超时保护（原 30s 在 mix/hybrid 模式下不够）。
         """
         rag = await self._ensure_ready(user_id, provider_config)
         try:
@@ -379,15 +391,21 @@ class LightRAGService:
         except ImportError as exc:
             raise RuntimeError("未安装 LightRAG，无法导入 QueryParam。") from exc
 
-        query_param = QueryParam(mode=mode)
+        query_param = QueryParam(
+            mode=mode,
+            conversation_history=conversation_history or [],
+            only_need_context=only_need_context,
+            user_prompt=user_prompt,
+            stream=stream,
+        )
 
         async def _do_query():
             if hasattr(rag, "aquery"):
                 return await rag.aquery(question, param=query_param)
             return await asyncio.to_thread(rag.query, question, param=query_param)
 
-        # 30 秒超时：hybrid/global 模式会调 LLM 做图谱推理，可能很慢
-        answer = await asyncio.wait_for(_do_query(), timeout=30.0)
+        # 60 秒超时：mix/hybrid/global 模式会调 LLM 做图谱推理，可能较慢
+        answer = await asyncio.wait_for(_do_query(), timeout=60.0)
         return str(answer)
 
     async def list_documents(self, user_id: int, provider_config: dict) -> list[dict]:

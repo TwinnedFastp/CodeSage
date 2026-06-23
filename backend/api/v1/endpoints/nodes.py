@@ -41,6 +41,21 @@ async def get_node_detail(
     return detail
 
 
+@router.get("/by-session/{session_id}")
+async def list_nodes_by_session(
+    session_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """列出某会话下的所有生成式节点（含当前版本内容），用于生成式页面加载历史。"""
+    try:
+        session_uuid = UUID(session_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="会话不存在")
+    nodes = await node_service.list_nodes_by_conversation(db, user.id, session_uuid)
+    return {"nodes": nodes}
+
+
 @router.post("/{node_id}/expand", response_model=NodeActionOut)
 async def expand_node(
     node_id: str,

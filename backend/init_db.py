@@ -39,6 +39,8 @@ async def init_db() -> None:
         await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_object_key VARCHAR(512)"))
         await conn.execute(text("UPDATE users SET username = split_part(email, '@', 1) WHERE username IS NULL OR username = ''"))
         await conn.execute(text("ALTER TABLE users ALTER COLUMN username SET NOT NULL"))
+        # chat_messages 加 render_mode 列：区分文本消息和生成式组件消息
+        await conn.execute(text("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS render_mode VARCHAR(16) NOT NULL DEFAULT 'text'"))
         logger.info("表结构创建完成（已存在的表跳过）")
 
 

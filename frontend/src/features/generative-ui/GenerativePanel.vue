@@ -26,6 +26,7 @@ const {
   callFunction,
   switchVersion,
   loadFunctions,
+  loadSessionHistory,
   clearMessages,
 } = useGenerativeUi()
 
@@ -68,8 +69,14 @@ watch(
       pendingSessionId = null
       return
     }
-    clearMessages()
+    // 切换会话时加载生成式历史，而不是只清空
+    if (newVal) {
+      loadSessionHistory(newVal)
+    } else {
+      clearMessages()
+    }
   },
+  { immediate: true },
 )
 
 onMounted(() => {

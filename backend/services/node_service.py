@@ -191,6 +191,32 @@ async def get_node_with_versions(
     }
 
 
+async def list_nodes_by_conversation(
+    db: AsyncSession, user_id: int, conversation_id
+) -> list[dict]:
+    """
+    列出某会话下的所有节点（含当前版本内容），用于生成式页面加载历史。
+
+    按 created_at 升序返回，前端按顺序还原对话流。
+    """
+    stmt = (
+        select(UiNode)
+        .where(UiNode.user_id == user_id, UiNode.conversation_id == conversation_id)
+        .order_by(UiNode.created_at.asc())
+    )
+    result = await db.execute(stmt)
+    nodes = list(result.scalars().all())
+
+    out = []
+    for node in nodes:
+        cur = await get_active_version(db, node.id)
+        out.append({
+            "node": _node_dict(node, cur),
+            "versions": [],  # 列表场景不返回全部版本，按需加载
+        })
+    return out
+
+
 async def create_root_from_chat(
     db: AsyncSession,
     user_id: int,

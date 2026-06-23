@@ -33,6 +33,7 @@ export interface ChatMessage {
   user_id: number
   role: 'user' | 'assistant' | 'system'
   content: string
+  render_mode?: 'text' | 'component'
   created_at: string
 }
 

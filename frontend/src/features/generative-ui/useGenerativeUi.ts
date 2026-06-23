@@ -112,6 +112,14 @@ export function useGenerativeUi() {
               backendSessionId = parsed.session_id as string
               continue
             }
+            // 流式原始文本片段：AI 正在生成组件 JSON，实时显示
+            if (parsed.streaming_raw) {
+              const m = findAssistant(assistantId)
+              if (m && !receivedComponent) {
+                m.content = (m.content || '') + parsed.streaming_raw
+              }
+              continue
+            }
             if (parsed.content) {
               const m = findAssistant(assistantId)
               if (m && !receivedComponent) {
@@ -290,6 +298,70 @@ export function useGenerativeUi() {
     }
   }
 
+  /**
+   * 加载某会话的生成式历史：从 UiNode 列表还原对话流。
+   * 每个节点对应一条 assistant 消息（含组件协议）。
+   * 用户消息从 chat_messages 表加载（render_mode='component' 的）。
+   */
+  async function loadSessionHistory(sessionId: string) {
+    clearMessages()
+    try {
+      // 1. 加载该会话的 component 模式消息（user + assistant）
+      const convResp = await fetch(`/api/v1/conversations/sessions/${sessionId}/messages?limit=100&offset=0`, {
+        headers: { Authorization: `Bearer ${auth.accessToken}` },
+      })
+      if (convResp.ok) {
+        const msgs = await convResp.json() as any[]
+        const componentMsgs = msgs.filter((m: any) => m.render_mode === 'component')
+        // 暂存 assistant 消息（JSON），后面按节点顺序匹配
+        const assistantJsonMsgs = componentMsgs.filter((m: any) => m.role === 'assistant')
+        const userMsgs = componentMsgs.filter((m: any) => m.role === 'user')
+
+        // 2. 加载该会话的 UiNode 列表
+        const { nodes } = await genApi.listNodesBySession(sessionId)
+
+        // 3. 按节点顺序还原对话：user 消息和 assistant 节点交替
+        //    简化策略：按时间顺序合并 user 消息和 node（assistant）
+        interface TimelineItem {
+          ts: string
+          type: 'user' | 'assistant'
+          data: any
+        }
+        const timeline: TimelineItem[] = []
+        for (const um of userMsgs) {
+          timeline.push({ ts: um.created_at, type: 'user', data: um })
+        }
+        for (const n of nodes) {
+          timeline.push({ ts: n.node.created_at, type: 'assistant', data: n })
+        }
+        timeline.sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime())
+
+        for (const item of timeline) {
+          if (item.type === 'user') {
+            messages.value.push({
+              id: `u-${item.data.message_id}`,
+              role: 'user',
+              content: item.data.content,
+            })
+          } else {
+            const proto = item.data.node.current_version?.content_json
+            if (proto) {
+              messages.value.push({
+                id: `a-${item.data.node.id}`,
+                role: 'assistant',
+                protocol: proto,
+                nodeId: item.data.node.id,
+                loading: false,
+              })
+            }
+          }
+        }
+      }
+    } catch (err: any) {
+      console.error('loadSessionHistory error', err)
+    }
+  }
+
   function clearMessages() {
     messages.value = []
   }
@@ -306,6 +378,7 @@ export function useGenerativeUi() {
     loadNode,
     switchVersion,
     loadFunctions,
+    loadSessionHistory,
     clearMessages,
   }
 }

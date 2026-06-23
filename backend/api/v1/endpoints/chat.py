@@ -38,10 +38,15 @@ router = APIRouter()
 MAX_HISTORY_MESSAGES = 20
 
 
-async def _persist_message(db: AsyncSession, user_id: int, session_id: str, role: str, content: str):
+async def _persist_message(
+    db: AsyncSession, user_id: int, session_id: str, role: str, content: str,
+    render_mode: str = "text",
+):
     """落库一条消息，失败不阻断主流程但记录日志。"""
     try:
-        await conversation_service.add_message(db, user_id, session_id, role, content)
+        await conversation_service.add_message(
+            db, user_id, session_id, role, content, render_mode=render_mode,
+        )
     except Exception:
         logger.exception("消息落库失败 user_id=%s session_id=%s role=%s", user_id, session_id, role)
 
@@ -70,6 +75,7 @@ async def _load_history_messages(db: AsyncSession, user_id: int, session_id: str
 
 async def _query_knowledge(
     user_id: int, provider_config: dict, user_message: str, mode: str = "hybrid",
+    conversation_history: list[dict] | None = None,
 ) -> tuple[str, str]:
     """
     用 LightRAG 检索知识库，返回 (knowledge, error)。
@@ -77,18 +83,21 @@ async def _query_knowledge(
     - knowledge: 检索到的知识上下文，失败时为空串
     - error: 失败原因（超时/异常），成功时为空串
 
-    不再静默吞异常——把错误返回给调用方，由流式管道通过 SSE 推给前端，
-    让用户知道 RAG 为什么没生效。service.query 内部已有 30s 超时保护。
+    新增 conversation_history 参数：传给 LightRAG 让它理解多轮对话上下文，
+    提升检索准确率（对齐 LightRAG-main QueryParam.conversation_history）。
     """
     from backend.core.config import settings
     if not settings.LIGHTRAG_ENABLED:
         return "", ""
     try:
-        knowledge = await lightrag_service.query(user_id, provider_config, user_message, mode=mode)
+        knowledge = await lightrag_service.query(
+            user_id, provider_config, user_message, mode=mode,
+            conversation_history=conversation_history,
+        )
         return knowledge, ""
     except asyncio.TimeoutError:
-        logger.warning("LightRAG 知识检索超时（>30s），降级为纯对话 user_id=%s", user_id)
-        return "", "知识库检索超时（超过 30 秒），已降级为普通对话。如持续超时请检查模型配置或网络。"
+        logger.warning("LightRAG 知识检索超时（>60s），降级为纯对话 user_id=%s", user_id)
+        return "", "知识库检索超时（超过 60 秒），已降级为普通对话。如持续超时请检查模型配置或网络。"
     except Exception as exc:
         logger.exception("LightRAG 知识检索失败，降级为纯对话 user_id=%s", user_id)
         return "", f"知识库检索失败：{exc}。已降级为普通对话。请在知识库面板查看文档状态或重建知识库。"
@@ -206,7 +215,11 @@ async def _streaming_with_persistence(
     knowledge = ""
     if use_rag:
         yield f"data: {json.dumps({'rag_status': 'searching'}, ensure_ascii=False)}\n\n"
-        knowledge, rag_error = await _query_knowledge(user_id, provider_config, user_message, mode)
+        # 传对话历史给 LightRAG，让它理解多轮上下文（对齐 LightRAG-main）
+        knowledge, rag_error = await _query_knowledge(
+            user_id, provider_config, user_message, mode,
+            conversation_history=history,
+        )
         if rag_error:
             # 检索失败/超时：推错误给前端，降级为纯对话（knowledge 为空）
             yield f"data: {json.dumps({'rag_error': rag_error}, ensure_ascii=False)}\n\n"
@@ -247,34 +260,87 @@ async def _component_streaming_with_persistence(
     user_message: str, session_id: str, user_id: int, db: AsyncSession,
     provider_config: dict, use_rag: bool, mode: str,
 ):
-    await _persist_message(db, user_id, session_id, "user", user_message)
+    """
+    生成式组件流式管道：
+    1. 用户消息落库（render_mode='component'，文本页面不显示）
+    2. 读取历史
+    3. RAG 检索（可选）
+    4. 调用 stream_component_protocol_raw 流式产出原始文本，
+       边产出边推给前端（前端实时显示"AI 正在生成…"的原始文本）
+    5. 流结束后解析完整 JSON 为 ComponentProtocol，落库 + 推 component 事件
+    6. 创建 UiNode 节点，推 node_id 事件
+    """
+    # 1. 用户消息落库（标记为 component 模式，文本页面不加载）
+    await _persist_message(db, user_id, session_id, "user", user_message, render_mode="component")
+
+    # 2. 读取历史
     history = await _load_history_messages(db, user_id, session_id)
 
+    # 3. 知识检索
     knowledge = ""
     if use_rag:
         yield f"data: {json.dumps({'rag_status': 'searching'}, ensure_ascii=False)}\n\n"
-        knowledge, rag_error = await _query_knowledge(user_id, provider_config, user_message, mode)
+        knowledge, rag_error = await _query_knowledge(
+            user_id, provider_config, user_message, mode,
+            conversation_history=history,
+        )
         if rag_error:
             yield f"data: {json.dumps({'rag_error': rag_error}, ensure_ascii=False)}\n\n"
         else:
             yield f"data: {json.dumps({'rag_status': 'done'}, ensure_ascii=False)}\n\n"
 
+    # 4. 流式生成组件协议原始文本
+    from backend.services.component_service import stream_component_protocol_raw
+    from backend.schemas.component import component_protocol_from_text
+    from backend.services import node_service
+
+    raw_parts: list[str] = []
+    try:
+        async for piece in stream_component_protocol_raw(
+            db, user_id, history, user_message, knowledge,
+        ):
+            if piece:
+                raw_parts.append(piece)
+                # 推流式片段给前端，前端可显示"生成中…"的原始文本
+                yield f"data: {json.dumps({'streaming_raw': piece}, ensure_ascii=False)}\n\n"
+    except Exception as exc:
+        logger.exception("流式生成组件协议失败 session_id=%s", session_id)
+        yield f"data: {json.dumps({'error': f'组件生成失败：{exc}'}, ensure_ascii=False)}\n\n"
+        yield "data: [DONE]\n\n"
+        return
+
+    # 5. 解析完整 JSON 为 ComponentProtocol
+    raw_text = "".join(raw_parts)
+    try:
+        protocol = component_protocol_from_text(raw_text)
+    except ValueError as exc:
+        logger.error("组件协议 JSON 解析失败 session_id=%s raw=%s", session_id, raw_text[:200])
+        yield f"data: {json.dumps({'error': f'组件协议解析失败：{exc}'}, ensure_ascii=False)}\n\n"
+        yield "data: [DONE]\n\n"
+        return
+
+    # 6. 创建 UiNode 节点并落库
     try:
         node, version, protocol = await node_service.create_root_from_chat(
-            db, user_id, UUID(session_id), history, user_message, knowledge
+            db, user_id, UUID(session_id), history, user_message, knowledge,
         )
-        component = protocol.model_dump(mode="json")
-        await _persist_message(
-            db, user_id, session_id, "assistant",
-            json.dumps(component, ensure_ascii=False),
-        )
-        yield f"data: {json.dumps({'node_id': str(node.id)}, ensure_ascii=False)}\n\n"
-        yield f"data: {json.dumps({'component': component}, ensure_ascii=False)}\n\n"
-    except ValueError as exc:
-        yield f"data: {json.dumps({'error': str(exc)}, ensure_ascii=False)}\n\n"
     except Exception as exc:
-        logger.exception("组件模式生成失败 session_id=%s", session_id)
-        yield f"data: {json.dumps({'error': f'组件生成失败：{exc}'}, ensure_ascii=False)}\n\n"
+        logger.exception("创建组件节点失败 session_id=%s", session_id)
+        yield f"data: {json.dumps({'error': f'节点创建失败：{exc}'}, ensure_ascii=False)}\n\n"
+        yield "data: [DONE]\n\n"
+        return
+
+    # assistant 消息落库（存完整组件 JSON，标记 component 模式）
+    component_json = protocol.model_dump(mode="json")
+    await _persist_message(
+        db, user_id, session_id, "assistant",
+        json.dumps(component_json, ensure_ascii=False),
+        render_mode="component",
+    )
+
+    # 推 node_id 和最终 component 给前端
+    yield f"data: {json.dumps({'node_id': str(node.id)}, ensure_ascii=False)}\n\n"
+    yield f"data: {json.dumps({'component': component_json}, ensure_ascii=False)}\n\n"
 
     yield "data: [DONE]\n\n"
 

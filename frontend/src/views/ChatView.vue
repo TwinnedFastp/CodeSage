@@ -121,8 +121,9 @@ async function onSend() {
   await doSend(async () => await createSession(), ragActive.value, ragMode.value === 'off' ? 'hybrid' : ragMode.value)
 }
 
-// RAG 模式切换选项
+// RAG 模式切换选项（对齐 LightRAG-main 原生支持的查询模式）
 const ragModeOptions = [
+  { value: 'mix', label: '混合+' },
   { value: 'hybrid', label: '混合' },
   { value: 'local', label: '局部' },
   { value: 'global', label: '全局' },

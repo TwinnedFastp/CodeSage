@@ -57,6 +57,10 @@ class ChatMessage(Base):
     user_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     role = Column(String(16), nullable=False)  # 'user' | 'assistant' | 'system'
     content = Column(Text, nullable=False)
+    # 渲染模式：'text'（普通文本）| 'component'（生成式组件 JSON）。
+    # 用于区分同一会话中不同页面的消息，文本页面加载历史时跳过 component 消息，
+    # 生成式页面通过 UiNode 加载历史，互不干扰。
+    render_mode = Column(String(16), nullable=False, default="text", server_default="text")
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), index=True)
 
     __table_args__ = (

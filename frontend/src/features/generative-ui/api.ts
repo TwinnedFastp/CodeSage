@@ -13,6 +13,11 @@ export function getNode(id: string): Promise<NodeDetail> {
   return request.get<NodeDetail>(`/nodes/${id}`).then((r) => r.data)
 }
 
+/** 列出某会话下的所有生成式节点（含当前版本内容），用于加载历史 */
+export function listNodesBySession(sessionId: string): Promise<{ nodes: any[] }> {
+  return request.get<{ nodes: any[] }>(`/nodes/by-session/${sessionId}`).then((r) => r.data)
+}
+
 export function expandNode(id: string, message: string): Promise<ExpandOut> {
   return request.post<ExpandOut>(`/nodes/${id}/expand`, { message }).then((r) => r.data)
 }
