@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, reactive } from 'vue'
-import { Send, Eye, EyeOff } from '@element-plus/icons-vue'
+import { ArrowRight, Eye, EyeOff } from '@element-plus/icons-vue'
 
 const props = defineProps<{
   props: {
@@ -69,10 +69,10 @@ function handleSubmit() {
 
 <template>
   <div class="rounded-2xl bg-white border border-[#E8E6E1] p-5 shadow-[0_2px_12px_rgb(0,0,0,0.03)]">
-    <h3 v-if="props.title" class="font-serif text-lg text-[#111] mb-4">{{ props.title }}</h3>
+    <h3 v-if="props.props.title" class="font-serif text-lg text-[#111] mb-4">{{ props.props.title }}</h3>
     
     <form @submit.prevent="handleSubmit" class="space-y-4">
-      <template v-for="field in props.fields" :key="field.name">
+      <template v-for="field in props.props.fields" :key="field.name">
         <!-- 输入框 -->
         <div v-if="field.type === 'input'" class="space-y-1.5">
           <label class="flex items-center gap-1.5 text-sm text-[#333]">
@@ -178,8 +178,8 @@ function handleSubmit() {
         class="w-full"
         @click="handleSubmit"
       >
-        <el-icon class="mr-1.5"><Send /></el-icon>
-        {{ props.submitText || '提交' }}
+        <el-icon class="mr-1.5"><ArrowRight /></el-icon>
+        {{ props.props.submitText || '提交' }}
       </el-button>
     </form>
   </div>

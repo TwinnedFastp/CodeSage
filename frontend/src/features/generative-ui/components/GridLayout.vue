@@ -24,7 +24,7 @@ const gridStyle = computed(() => ({
 
 <template>
   <div :style="gridStyle" class="w-full">
-    <template v-for="(child, i) in props.children" :key="child.id || child.type + '_' + i">
+    <template v-for="(child, i) in props.props.children" :key="child.id || child.type + '_' + i">
       <div v-if="componentRegistry[child.type]">
         <component
           :is="componentRegistry[child.type]"

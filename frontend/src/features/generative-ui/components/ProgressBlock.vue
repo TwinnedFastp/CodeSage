@@ -40,9 +40,9 @@ const height = computed(() => {
 
 <template>
   <div class="space-y-2">
-    <div v-if="props.title" class="flex items-center justify-between">
-      <span class="text-sm text-[#333]">{{ props.title }}</span>
-      <span v-if="props.showLabel !== false" class="text-sm font-medium text-[#111]">
+    <div v-if="props.props.title" class="flex items-center justify-between">
+      <span class="text-sm text-[#333]">{{ props.props.title }}</span>
+      <span v-if="props.props.showLabel !== false" class="text-sm font-medium text-[#111]">
         {{ Math.round(percentage) }}%
       </span>
     </div>
