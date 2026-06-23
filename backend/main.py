@@ -13,6 +13,8 @@ from backend.services.conversation_service import ConversationError
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    # 加载UI设计技能（自动注册到函数调用系统）
+    import backend.skills.ui_design
     yield
 
 
