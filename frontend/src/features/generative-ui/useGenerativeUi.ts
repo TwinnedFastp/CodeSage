@@ -313,8 +313,6 @@ export function useGenerativeUi() {
       if (convResp.ok) {
         const msgs = await convResp.json() as any[]
         const componentMsgs = msgs.filter((m: any) => m.render_mode === 'component')
-        // 暂存 assistant 消息（JSON），后面按节点顺序匹配
-        const assistantJsonMsgs = componentMsgs.filter((m: any) => m.role === 'assistant')
         const userMsgs = componentMsgs.filter((m: any) => m.role === 'user')
 
         // 2. 加载该会话的 UiNode 列表
