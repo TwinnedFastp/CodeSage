@@ -5,7 +5,7 @@ import { ref, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import * as convApi from '@/api/conversations'
-import type { DisplayMessage } from '@/types'
+import type { DisplayMessage, MessageAttachment, PendingImage, PendingDocument } from '@/types'
 
 export function useChat(
   currentSessionId: () => string | null,
@@ -19,6 +19,8 @@ export function useChat(
   const userInput = ref('')
   const isTyping = ref(false)
   const loadingMessages = ref(false)
+  const pendingImages = ref<PendingImage[]>([])
+  const pendingDocuments = ref<PendingDocument[]>([])
 
   const WELCOME_MSG: DisplayMessage = {
     id: 'welcome',
@@ -37,24 +39,24 @@ export function useChat(
           role,
         }
 
-        // component 模式的消息：从 JSON 中提取可读文本作为 content 显示
         if (m.render_mode === 'component' && m.content) {
           try {
             const parsed = JSON.parse(m.content)
-            // 提取标题或第一个 text_block 的内容
             const title = parsed.title || ''
             const firstText = parsed.components?.find((c: any) => c.type === 'text_block')
             const textContent = firstText?.props?.content || ''
             const summary = (title || textContent || '[生成式界面内容]') as string
             return { ...base, content: summary, _isComponent: true, _rawContent: m.content }
           } catch {
-            // JSON 解析失败，截取前 200 字符显示
             return { ...base, content: m.content.slice(0, 200), _isComponent: true }
           }
         }
 
-        // 普通 text 模式消息直接显示
-        return { ...base, content: m.content }
+        const msg: DisplayMessage = { ...base, content: m.content }
+        if (m.attachments && m.attachments.length > 0) {
+          msg.attachments = m.attachments
+        }
+        return msg
       })
 
       if (messages.value.length === 0) messages.value = [{ ...WELCOME_MSG }]
@@ -88,7 +90,8 @@ export function useChat(
   }
 
   async function sendMessage(ensureSession: () => Promise<string | null>, useRag: boolean = false, mode: string = 'hybrid') {
-    if (!userInput.value.trim() || isTyping.value) return
+    if (!userInput.value.trim() && pendingImages.value.length === 0 && pendingDocuments.value.length === 0) return
+    if (isTyping.value) return
 
     let sessionId = currentSessionId()
     if (!sessionId) {
@@ -97,10 +100,33 @@ export function useChat(
     }
 
     const userText = userInput.value.trim()
-    messages.value.push({ id: `u-${Date.now()}`, role: 'user', content: userText })
+
+    const attachments: MessageAttachment[] = []
+    const imagesBase64: string[] = []
+    for (const img of pendingImages.value) {
+      imagesBase64.push(img.dataUrl)
+      attachments.push({ type: 'image', data: img.dataUrl })
+    }
+    const docsPayload: { filename: string; content: string }[] = []
+    for (const doc of pendingDocuments.value) {
+      docsPayload.push({ filename: doc.filename, content: doc.content })
+      attachments.push({ type: 'document', filename: doc.filename })
+    }
+
+    messages.value.push({
+      id: `u-${Date.now()}`,
+      role: 'user',
+      content: userText,
+      attachments: attachments.length > 0 ? attachments : undefined,
+    })
     userInput.value = ''
     const textarea = document.querySelector('textarea')
     if (textarea) textarea.style.height = 'auto'
+
+    const currentImages = [...pendingImages.value]
+    const currentDocuments = [...pendingDocuments.value]
+    pendingImages.value = []
+    pendingDocuments.value = []
 
     const assistantId = `a-${Date.now()}`
     messages.value.push({ id: assistantId, role: 'assistant', content: '', pending: true })
@@ -115,7 +141,14 @@ export function useChat(
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ message: userText, session_id: sessionId, use_rag: useRag, mode }),
+        body: JSON.stringify({
+          message: userText,
+          session_id: sessionId,
+          use_rag: useRag,
+          mode,
+          images: imagesBase64.length > 0 ? imagesBase64 : undefined,
+          documents: docsPayload.length > 0 ? docsPayload : undefined,
+        }),
       })
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
       if (!response.body) throw new Error('无响应流')
@@ -202,9 +235,28 @@ export function useChat(
     }
   }
 
+  function addPendingImage(dataUrl: string) {
+    pendingImages.value.push({ id: `img-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, dataUrl })
+  }
+
+  function removePendingImage(id: string) {
+    pendingImages.value = pendingImages.value.filter(img => img.id !== id)
+  }
+
+  function addPendingDocument(filename: string, content: string) {
+    pendingDocuments.value.push({ id: `doc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, filename, content })
+  }
+
+  function removePendingDocument(id: string) {
+    pendingDocuments.value = pendingDocuments.value.filter(doc => doc.id !== id)
+  }
+
   return {
     messages, userInput, isTyping, loadingMessages,
     loadMessages, clearMessages, showWelcome,
     sendMessage, adjustTextareaHeight, scrollToBottom,
+    pendingImages, pendingDocuments,
+    addPendingImage, removePendingImage,
+    addPendingDocument, removePendingDocument,
   }
 }

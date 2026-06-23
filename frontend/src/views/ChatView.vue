@@ -5,6 +5,7 @@ import { ElMessage } from 'element-plus'
 import {
   ChatDotRound, Operation, Plus, User as UserIcon, Monitor, Setting,
   Fold, Expand, Promotion, SwitchButton, Collection, Files, Cpu, Coin,
+  Picture, Document, Close, ZoomIn,
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useResponsive } from '@/composables/useResponsive'
@@ -15,6 +16,25 @@ import KnowledgePanel from '@/components/KnowledgePanel.vue'
 // 复用单条会话项组件，避免桌面端/移动端两处列表重复代码
 import SessionListItem from '@/components/SessionListItem.vue'
 import GenerativePanel from '@/features/generative-ui/GenerativePanel.vue'
+import { marked } from 'marked'
+
+// 配置 marked 渲染选项
+marked.setOptions({
+  breaks: true,       // 支持换行符
+  gfm: true,          // GitHub 风格 Markdown（表格、任务列表等）
+})
+
+/** 将 Markdown 文本转为 HTML */
+function renderMarkdown(text: string): string {
+  if (!text) return ''
+  try {
+    const html = marked.parse(text) as string
+    return typeof html === 'string' ? html : String(html)
+  } catch {
+    // 解析失败时转义 HTML 后原样返回
+    return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  }
+}
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -35,6 +55,9 @@ const {
   messages, userInput, isTyping, loadingMessages,
   loadMessages, clearMessages, showWelcome,
   sendMessage: doSend, adjustTextareaHeight,
+  pendingImages, pendingDocuments,
+  addPendingImage, removePendingImage,
+  addPendingDocument, removePendingDocument,
 } = useChat(
   () => currentSessionId.value,
   chatContainer,
@@ -143,6 +166,79 @@ function onGenSessionCreated(id: string) {
   currentSessionId.value = id
   loadSessions()
 }
+
+// ---- 图片/文档附件上传 ----
+const imagePreviewVisible = ref(false)
+const imagePreviewUrl = ref('')
+const imageInputRef = ref<HTMLInputElement | null>(null)
+const documentInputRef = ref<HTMLInputElement | null>(null)
+
+const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+const ALLOWED_DOC_TYPES = ['.pdf', '.docx', '.txt', '.md']
+const MAX_IMAGE_SIZE = 10 * 1024 * 1024
+const MAX_DOC_SIZE = 20 * 1024 * 1024
+
+function previewImage(dataUrl: string) {
+  imagePreviewUrl.value = dataUrl
+  imagePreviewVisible.value = true
+}
+
+function triggerImageSelect() {
+  imageInputRef.value?.click()
+}
+
+function triggerDocSelect() {
+  documentInputRef.value?.click()
+}
+
+function onImageFileChange(e: Event) {
+  const input = e.target as HTMLInputElement
+  const files = input.files
+  if (!files) return
+  for (const file of Array.from(files)) {
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+      ElMessage.warning(`不支持的图片格式: ${file.name}`)
+      continue
+    }
+    if (file.size > MAX_IMAGE_SIZE) {
+      ElMessage.warning(`图片过大: ${file.name}（最大 10MB）`)
+      continue
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      addPendingImage(reader.result as string)
+    }
+    reader.readAsDataURL(file)
+  }
+  input.value = ''
+}
+
+function onDocFileChange(e: Event) {
+  const input = e.target as HTMLInputElement
+  const files = input.files
+  if (!files) return
+  for (const file of Array.from(files)) {
+    const ext = '.' + file.name.split('.').pop()?.toLowerCase()
+    if (!ALLOWED_DOC_TYPES.includes(ext)) {
+      ElMessage.warning(`不支持的文档格式: ${file.name}（支持 PDF/DOCX/TXT/MD）`)
+      continue
+    }
+    if (file.size > MAX_DOC_SIZE) {
+      ElMessage.warning(`文档过大: ${file.name}（最大 20MB）`)
+      continue
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      addPendingDocument(file.name, reader.result as string)
+    }
+    reader.readAsDataURL(file)
+  }
+  input.value = ''
+}
+
+const canSend = computed(() => {
+  return (userInput.value.trim() || pendingImages.value.length > 0 || pendingDocuments.value.length > 0) && !isTyping.value
+})
 </script>
 
 <template>
@@ -328,7 +424,17 @@ function onGenSessionCreated(id: string) {
                 <el-icon :size="12"><Cpu /></el-icon>
                 生成式界面 — 切换到「生成式」模式查看完整页面
               </div>
-              <div class="whitespace-pre-wrap font-sans">{{ msg.content }}</div>
+              <div v-if="msg.attachments && msg.attachments.length > 0" class="mb-2 flex flex-wrap gap-2">
+                <template v-for="att in msg.attachments" :key="att.data || att.filename">
+                  <img v-if="att.type === 'image' && att.data" :src="att.data" class="max-w-[200px] max-h-[200px] rounded-lg object-cover cursor-pointer" @click="previewImage(att.data!)" />
+                  <div v-else-if="att.type === 'document'" class="flex items-center gap-1.5 px-2 py-1 bg-[#F3F2EE] rounded-lg text-xs text-[#111111]">
+                    <el-icon class="w-3.5 h-3.5"><Document /></el-icon>
+                    <span>{{ att.filename }}</span>
+                  </div>
+                </template>
+              </div>
+              <!-- Markdown 富文本渲染 -->
+              <div class="markdown-body" v-html="renderMarkdown(msg.content)"></div>
               <div v-if="isTyping && msg.id === messages[messages.length-1].id && msg.role === 'assistant'" class="inline-block w-2 h-4 bg-[#111111] animate-pulse-cursor ml-1 align-middle"></div>
             </div>
           </div>
@@ -360,6 +466,31 @@ function onGenSessionCreated(id: string) {
           </div>
 
           <div class="bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-[#E8E6E1] p-2 pr-14 relative transition-all duration-300 focus-within:shadow-[0_8px_30px_rgb(0,0,0,0.08)] focus-within:border-[#D1CFCA]">
+            <div v-if="pendingImages.length > 0 || pendingDocuments.length > 0" class="flex flex-wrap gap-2 px-3 pt-2 pb-1">
+              <div v-for="img in pendingImages" :key="img.id" class="relative group">
+                <img :src="img.dataUrl" class="w-14 h-14 rounded-lg object-cover border border-[#E8E6E1]" />
+                <button @click="removePendingImage(img.id)" class="absolute -top-1.5 -right-1.5 w-5 h-5 bg-[#111] text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                  <el-icon :size="10"><Close /></el-icon>
+                </button>
+              </div>
+              <div v-for="doc in pendingDocuments" :key="doc.id" class="relative group flex items-center gap-1.5 px-2.5 py-1.5 bg-[#F3F2EE] rounded-lg text-[12px] text-[#555]">
+                <el-icon :size="14"><Document /></el-icon>
+                <span class="max-w-[100px] truncate">{{ doc.filename }}</span>
+                <button @click="removePendingDocument(doc.id)" class="ml-1 text-[#999] hover:text-[#111]">
+                  <el-icon :size="12"><Close /></el-icon>
+                </button>
+              </div>
+            </div>
+            <div class="flex items-center gap-1 px-2">
+              <button @click="triggerImageSelect" class="p-2 rounded-full hover:bg-[#F3F2EE] text-[#999] hover:text-[#111] transition-colors" title="上传图片">
+                <el-icon :size="18"><Picture /></el-icon>
+              </button>
+              <button @click="triggerDocSelect" class="p-2 rounded-full hover:bg-[#F3F2EE] text-[#999] hover:text-[#111] transition-colors" title="上传文档">
+                <el-icon :size="18"><Document /></el-icon>
+              </button>
+            </div>
+            <input ref="imageInputRef" type="file" accept="image/jpeg,image/png,image/gif,image/webp" multiple class="hidden" @change="onImageFileChange" />
+            <input ref="documentInputRef" type="file" accept=".pdf,.docx,.txt,.md" multiple class="hidden" @change="onDocFileChange" />
             <textarea
               v-model="userInput"
               rows="1"
@@ -368,7 +499,7 @@ function onGenSessionCreated(id: string) {
               @input="adjustTextareaHeight"
               @keydown.enter.prevent="onSend"
             ></textarea>
-            <button @click="onSend" :disabled="!userInput.trim() || isTyping" class="absolute right-3 bottom-3 w-10 h-10 rounded-full flex items-center justify-center transition-all duration-300 disabled:opacity-30 disabled:cursor-not-allowed text-white" :class="userInput.trim() && !isTyping ? 'bg-[#111111] hover:bg-[#333333]' : 'bg-[#D1CFCA]'">
+            <button @click="onSend" :disabled="!canSend" class="absolute right-3 bottom-3 w-10 h-10 rounded-full flex items-center justify-center transition-all duration-300 disabled:opacity-30 disabled:cursor-not-allowed text-white" :class="canSend ? 'bg-[#111111] hover:bg-[#333333]' : 'bg-[#D1CFCA]'">
               <el-icon :size="16"><Promotion /></el-icon>
             </button>
           </div>
@@ -398,5 +529,9 @@ function onGenSessionCreated(id: string) {
       @refresh="loadDocuments"
       @reset="resetKnowledge"
     />
+
+    <el-dialog v-model="imagePreviewVisible" title="图片预览" width="fit-content" append-to-body>
+      <img :src="imagePreviewUrl" class="max-w-full max-h-[70vh] rounded-lg" />
+    </el-dialog>
   </div>
 </template>

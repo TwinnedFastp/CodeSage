@@ -49,6 +49,7 @@ class MessageOut(BaseModel):
     role: str
     content: str
     render_mode: str = "text"
+    attachments: Optional[list[dict]] = None
     created_at: datetime
 
     class Config:
