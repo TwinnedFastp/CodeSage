@@ -7,29 +7,43 @@ CodeSage 是一个基于 FastAPI + Vue 3 构建的智能对话应用，不仅支
 ## 核心功能
 
 ### 对话与生成式 UI
+
 - **双模式对话**：文本对话 + 生成式页面（AI 回复动态渲染为结构化组件）
 - **流式输出**：SSE 实时流式响应，生成式页面支持边生成边显示
 - **多轮对话**：会话历史管理，切换会话自动加载历史记录
-- **生成式组件库**：8 种内置组件（摘要卡片、文本块、流程图、列表、代码块、引用、表格、未知兜底），支持节点版本管理与版本切换
+- **`render_mode` 字段**：`chat_messages` 表新增 `render_mode` 列（`text`/`component`），区分文本消息与生成式组件消息
+- **生成式组件库**：9 种内置组件（摘要卡片、文本块、流程图、列表、代码块、引用、表格、网页入口卡片、未知兜底）
+- **节点版本管理**：UiNode / UiNodeVersion 模型，支持生成、重生成、展开、版本切换、版本回溯
+- **AI 预生成交互网页**（特色功能）：
+  - AI 一次性生成 1~3 个完整的 HTML 子页面（含内联 CSS / JS 交互逻辑）
+  - 通过 `open_webpage` action 持久化存储在 `ComponentProtocol.actions` 中
+  - 用户点击「查看详情」按钮 → 全屏 iframe 沙箱（`sandbox="allow-scripts allow-same-origin"`）打开预生成页面
+  - 页面支持 Tab 切换、数据筛选、展开折叠等真实交互，**无需等待 AI 实时生成**
+  - 刷新网站内容不丢失（数据持久化在 `ui_node_version.content_json` 中）
 - **函数调用**：内置沙箱化的函数调用系统，支持 AI 主动触发再生、扩展等操作
 
 ### 知识库（LightRAG）
+
 - **5 种检索模式**：naive（朴素向量）、local（局部实体）、global（全局图谱）、hybrid（混合）、mix（知识图谱+向量）
 - **知识图谱**：自动抽取实体与关系，构建知识图谱辅助检索
 - **多轮对话上下文**：`conversation_history` 传入 LightRAG，提升追问场景的检索质量
 - **文档管理**：上传 MD/TXT 文档，实时查看处理状态（解析→抽取→分块→索引）
 - **按用户隔离**：每个用户独立的知识库工作空间（PG_WORKSPACE）
+- **查询超时优化**：mix/hybrid 图谱推理较慢，超时 60s
 
 ### 用户系统
+
 - **JWT 认证**：双 Token（访问+刷新），Redis 黑名单管理
 - **登录安全**：失败次数限制 + 自动锁定，拼图验证码
 - **邮箱验证**：可选的邮箱验证流程
-- **头像上传**：MinIO 预签名 URL 直传，浏览器→MinIO 无需经后端中转
-- **多模型供应商**：每个用户可配置多个 AI 供应商，前端切换
+- **头像上传**：MinIO 预签名 URL 直传，浏览器 → MinIO 无需经后端中转；前端使用 `el-avatar` 组件统一展示
+- **多模型供应商**：每个用户可配置多个 AI 供应商，前端切换；API Key 加密存储
 
 ### 管理后台
+
 - **数据库管理**：可视化查看/编辑所有数据表（Django-admin 风格）
 - **模型供应商管理**：直接在数据库管理页配置 AI 供应商
+- **审计日志**：关键操作记录
 
 ## 技术栈
 
@@ -47,59 +61,78 @@ CodeSage 是一个基于 FastAPI + Vue 3 构建的智能对话应用，不仅支
 ```
 CodeSage/
 ├── backend/
-│   ├── api/v1/endpoints/     # API 端点
-│   │   ├── auth.py            #   认证/注册/头像
-│   │   ├── chat.py            #   对话流式接口（文本+生成式）
-│   │   ├── conversations.py   #   会话与消息管理
-│   │   ├── knowledge.py       #   知识库查询/状态
-│   │   ├── nodes.py           #   生成式 UI 节点
-│   │   ├── providers.py       #   AI 模型供应商
-│   │   ├── functions.py       #   函数调用
-│   │   ├── database_admin.py  #   数据库管理后台
-│   │   └── admin/             #   管理员接口
-│   ├── core/                  # 配置、安全、依赖注入
-│   ├── db/                    # 数据库会话
-│   ├── minio/                 # MinIO/S3 存储模块（独立）
-│   │   ├── client.py          #   S3 客户端工厂
-│   │   └── storage.py         #   头像上传/预签名 URL
-│   ├── models/                # SQLAlchemy 模型
-│   ├── schemas/               # Pydantic 模型
-│   ├── services/              # 业务逻辑层
-│   │   ├── auth_service.py    #   认证/用户资料
-│   │   ├── conversation_service.py  # 会话/消息
-│   │   ├── node_service.py    #   生成式节点
-│   │   └── component_service.py    # 组件协议生成
-│   ├── rag/                   # LightRAG 集成
-│   │   ├── service.py         #   LightRAG 初始化/查询
-│   │   └── endpoints.py       #   知识库上传/文档管理
-│   ├── function_calling/      # 函数调用沙箱
-│   ├── sys_prompts/           # 系统提示词
-│   │   ├── chat_system.md     #   对话系统提示
-│   │   ├── component_protocol.md  # 生成式组件协议
-│   │   └── title_generator.md #   标题生成提示
-│   └── init_db.py             # 数据库初始化与迁移
+│   ├── api/v1/endpoints/         # API 端点
+│   │   ├── auth.py                #   认证/注册/头像
+│   │   ├── chat.py                #   对话流式接口（文本+生成式）
+│   │   ├── conversations.py       #   会话与消息管理
+│   │   ├── knowledge.py           #   知识库查询/状态网关
+│   │   ├── nodes.py               #   生成式 UI 节点（重生成/展开/版本切换）
+│   │   ├── providers.py           #   AI 模型供应商
+│   │   ├── functions.py           #   函数调用
+│   │   ├── database_admin.py      #   数据库管理后台
+│   │   └── admin/                 #   管理员接口
+│   ├── core/                      # 配置、安全、依赖注入
+│   ├── db/                        # 数据库会话
+│   ├── minio/                     # MinIO/S3 存储模块（独立）
+│   │   ├── client.py              #   S3 客户端工厂
+│   │   └── storage.py             #   头像上传/预签名 URL
+│   ├── models/                    # SQLAlchemy 模型
+│   │   ├── conversation.py        #   含 render_mode 字段
+│   │   ├── ui_node.py             #   生成式节点版本化
+│   │   ├── audit.py               #   审计日志
+│   │   └── provider.py            #   AI 供应商
+│   ├── schemas/                   # Pydantic 模型
+│   │   ├── component.py           #   组件协议
+│   │   ├── node.py                #   节点 schema
+│   │   └── function_calling.py    #   函数调用 schema
+│   ├── services/                  # 业务逻辑层
+│   │   ├── auth_service.py        #   认证/用户资料
+│   │   ├── conversation_service.py#   会话/消息
+│   │   ├── node_service.py        #   生成式节点（重生成/展开/版本）
+│   │   ├── component_service.py   #   组件协议生成（流式+非流式）
+│   │   ├── memory_service.py      #   记忆管理
+│   │   ├── database_admin_service.py # 数据库管理
+│   │   └── provider_service.py    #   AI 供应商配置
+│   ├── rag/                       # LightRAG 集成
+│   │   ├── service.py             #   LightRAG 初始化/查询（5种模式）
+│   │   ├── endpoints.py           #   知识库上传/文档管理
+│   │   └── parser.py              #   文件解析器
+│   ├── function_calling/          # 函数调用沙箱
+│   │   ├── registry.py            #   工具注册表
+│   │   ├── sandbox.py             #   沙箱执行
+│   │   ├── validator.py           #   参数校验
+│   │   └── tools/                 #   具体工具实现
+│   ├── sys_prompts/               # 系统提示词（全部 .md）
+│   │   ├── chat_system.md         #   对话系统提示
+│   │   ├── component_protocol.md  #   生成式组件协议（含 open_webpage 指南）
+│   │   └── title_generator.md     #   标题生成提示
+│   └── init_db.py                 # 数据库初始化与迁移
 ├── frontend/src/
-│   ├── views/                 # 页面视图
-│   │   ├── ChatView.vue       #   对话主界面（文本+生成式切换）
-│   │   ├── LoginView.vue      #   登录
-│   │   ├── RegisterView.vue   #   注册
-│   │   ├── SettingsView.vue   #   设置（资料/模型/知识库）
-│   │   └── VerifyEmailView.vue#   邮箱验证
+│   ├── views/                     # 页面视图
+│   │   ├── ChatView.vue           #   对话主界面（文本+生成式切换）
+│   │   ├── LoginView.vue          #   登录
+│   │   ├── RegisterView.vue       #   注册
+│   │   ├── SettingsView.vue       #   设置（资料/模型/知识库）
+│   │   └── VerifyEmailView.vue    #   邮箱验证
 │   ├── features/
-│   │   ├── generative-ui/     # 生成式 UI 模块
-│   │   │   ├── components/    #   8 种渲染组件
+│   │   ├── generative-ui/         # 生成式 UI 模块
+│   │   │   ├── components/        #   9 种渲染组件
+│   │   │   │   └── WebPageBlock.vue #  可点击入口卡片→全屏 HTML 子页面
 │   │   │   ├── GenerativePanel.vue  # 生成式面板
+│   │   │   ├── ComponentRenderer.vue#  组件渲染器（含全屏 iframe 沙箱）
+│   │   │   ├── NodeDetailView.vue   # 节点详情视图
 │   │   │   ├── useGenerativeUi.ts   # 生成式逻辑 composable
 │   │   │   ├── componentRegistry.ts # 组件注册表
-│   │   │   └── api.ts         #   生成式 API
-│   │   └── database-admin/    # 数据库管理前端
-│   ├── composables/           # Vue composables
-│   ├── stores/                # Pinia 状态管理
-│   ├── api/                   # Axios API 封装
-│   └── types/                 # TypeScript 类型
-├── docker-compose.yml         # 一键部署
-├── .env                       # 环境变量配置
-└── scripts/setup_centos.sh    # CentOS 服务器初始化脚本
+│   │   │   ├── api.ts               # 生成式 API
+│   │   │   └── types.ts             # 类型定义（含 open_webpage action）
+│   │   └── database-admin/        # 数据库管理前端
+│   ├── composables/               # Vue composables
+│   ├── stores/                    # Pinia 状态管理
+│   ├── api/                       # Axios API 封装
+│   └── types/                     # TypeScript 类型
+├── docker-compose.yml             # 一键部署
+├── .env                           # 环境变量配置
+└── scripts/setup_centos.sh        # CentOS 服务器初始化脚本
 ```
 
 ## 快速开始
@@ -159,7 +192,7 @@ npm run dev
 
 ### AI 模型配置
 
-模型配置已迁移至数据库（`ai_providers` 表），通过前端「设置 → 模型供应商」页面管理。每个用户可配置多个供应商并启用其一。
+模型配置已迁移至数据库（`ai_providers` 表），通过前端「设置 → 模型供应商」页面管理。每个用户可配置多个供应商并启用其一。API Key 使用 Fernet 加密存储。
 
 默认使用阿里云百炼 OpenAI 兼容接口：
 
@@ -171,12 +204,7 @@ EMBEDDING_MODEL=text-embedding-v4
 EMBEDDING_DIM=1024
 ```
 
-**切换其他模型**（通过 LiteLLM Proxy 统一管理）：
-```bash
-pip install -r backend/requirements.txt
-litellm --config backend/litellm_config.example.yaml --port 4000
-# 然后将 LLM_BASE_URL 改为 http://localhost:4000/v1
-```
+> ⚠️ 注意：阿里百炼的 `qwen3.7-max` 模型不存在，请使用 `qwen-plus` 或 `qwen-max`。
 
 ### MinIO 对象存储
 
@@ -190,9 +218,16 @@ litellm --config backend/litellm_config.example.yaml --port 4000
 | `S3_BUCKET_AVATARS` | 头像存储桶名 | `codesage-avatars` |
 
 > Docker 部署时 `S3_ENDPOINT_URL` 应改为 `http://minio:9000`（容器内通信）。
-> **生产环境务必修改默认密码**，且 `.env` 和 `docker-compose.yml` 中的 `MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD` 必须保持一致。
+> **生产环境务必修改默认密码**，且 `.env` 的 `S3_ACCESS_KEY_ID`/`S3_SECRET_ACCESS_KEY` 必须与 `docker-compose.yml` 中的 `MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD` 保持一致。
+> 修改密码需同步两边配置 + 重启 minio 容器 + 清 `docker_data/minio/` 旧数据。
 
 MinIO 控制台：http://localhost:9001，使用 `.env` 中的用户名密码登录。
+
+头像上传流程：
+1. 前端调 `POST /api/v1/auth/me/avatar/upload` 获取 MinIO 预签名上传 URL
+2. 浏览器直接 `PUT` 上传文件到 MinIO（不经后端中转）
+3. 调 `POST /api/v1/auth/me/avatar/commit` 保存引用
+4. 前端展示用 `el-avatar` 组件，URL 加时间戳破缓存
 
 ### LightRAG 知识库
 
@@ -204,6 +239,7 @@ MinIO 控制台：http://localhost:9001，使用 `.env` 中的用户名密码登
 | `POSTGRES_WORKSPACE` | 用户工作空间前缀 | `codesage_rag` |
 
 > Docker 部署时 `POSTGRES_HOST` 会被 docker-compose 覆盖为 `db`。
+> LightRAG 按用户缓存多实例（workspace 隔离），混合存储（PG + pgvector + NetworkX）。
 
 ### 认证与安全
 
@@ -215,40 +251,66 @@ MinIO 控制台：http://localhost:9001，使用 `.env` 中的用户名密码登
 | `LOGIN_MAX_FAIL_ATTEMPTS` | 最大登录失败次数 | 5 |
 | `LOGIN_LOCK_MINUTES` | 锁定时长 | 15 分钟 |
 | `SKIP_EMAIL_VERIFICATION` | 跳过邮箱验证（开发模式） | `true` |
+| `FIELD_ENCRYPTION_KEY` | 字段加密密钥（Fernet） | 空（重启丢失历史数据） |
 
 ## 生成式 UI 组件库
 
 组件位于 `frontend/src/features/generative-ui/components/`：
 
-| 组件 | 文件 | 说明 |
-|------|------|------|
-| 摘要卡片 | `SummaryCard.vue` | 带标题的内容摘要 |
-| 文本块 | `TextBlock.vue` | 普通段落文本 |
-| 流程图 | `Flowchart.vue` | 节点+边的流程可视化 |
-| 列表 | `ListBlock.vue` | 有序/无序列表 |
-| 代码块 | `CodeBlock.vue` | 语法高亮代码 |
-| 引用 | `QuoteBlock.vue` | 引用/提示框 |
-| 表格 | `TableBlock.vue` | 结构化表格 |
-| 未知兜底 | `UnknownBlock.vue` | 未知组件类型的降级渲染 |
+| 组件 | 文件 | type 字段 | 说明 |
+|------|------|-----------|------|
+| 摘要卡片 | `SummaryCard.vue` | `summary_card` | 带标题的内容摘要 |
+| 文本块 | `TextBlock.vue` | `text_block` | 普通段落文本 |
+| 流程图 | `Flowchart.vue` | `flowchart` | 节点+边的流程可视化 |
+| 列表 | `ListBlock.vue` | `list` | 有序/无序列表 |
+| 代码块 | `CodeBlock.vue` | `code` | 语法高亮代码 |
+| 引用 | `QuoteBlock.vue` | `quote` | 引用/提示框 |
+| 表格 | `TableBlock.vue` | `table` | 结构化表格 |
+| 网页入口卡片 | `WebPageBlock.vue` | `webpage` | **可点击卡片→全屏 HTML 子页面** |
+| 未知兜底 | `UnknownBlock.vue` | — | 未知组件类型的降级渲染 |
 
 组件注册表：`frontend/src/features/generative-ui/componentRegistry.ts`
 
-AI 生成的组件协议格式：
+AI 生成的组件协议格式（ComponentProtocol）：
 ```json
 {
-  "page_type": "explain",
-  "title": "标题",
+  "page_type": "analysis",
+  "title": "页面标题",
   "components": [
-    { "type": "summary_card", "props": { "title": "...", "content": "..." }, "id": "sum_1" }
+    { "id": "sum_1", "type": "summary_card", "props": { "title": "...", "content": "..." } },
+    { "id": "wp_1", "type": "webpage", "props": { "title": "详情页", "description": "...", "html_content": "<!DOCTYPE html>..." } }
   ],
-  "actions": [],
-  "meta": { "source": "CodeSage 知识库", "version": 1 }
+  "actions": [
+    { "type": "regenerate", "target_id": "sum_1" },
+    { "type": "expand", "target_id": "sum_1" },
+    { "type": "function_call", "function_name": "knowledge_query", "params": {} },
+    { "type": "open_webpage", "params": { "title": "子页面", "html_content": "<!DOCTYPE html>..." } }
+  ],
+  "meta": { "source": "CodeSage", "version": 1 }
 }
 ```
+
+### action 类型白名单
+
+| type | 说明 | 必填字段 |
+|------|------|----------|
+| `regenerate` | 重新生成某组件 | `target_id` |
+| `expand` | 展开某组件更多内容 | `target_id` |
+| `function_call` | 调用后端函数 | `function_name`，可选 `params`/`target_id` |
+| `open_webpage` | 打开预生成的全屏 HTML 子页面 | `params.title` + `params.html_content` |
+
+## 持久化机制
+
+- **会话消息**：`chat_sessions` + `chat_messages`（含 `render_mode` 区分文本/组件）
+- **生成式节点**：`ui_node`（节点树）+ `ui_node_version`（版本快照，content_json 存 ComponentProtocol）+ `ui_node_relation`（节点关系图）
+- **AI 供应商配置**：`ai_providers`（API Key Fernet 加密）
+- **对象存储**：MinIO（头像等文件）
+- **缓存/限流**：Redis（JWT 黑名单 / 刷新令牌 / 登录限流）
 
 ## API 速览
 
 ### 对话
+
 ```bash
 # 文本对话（流式）
 curl -X POST http://localhost:8000/api/v1/chat/stream \
@@ -263,7 +325,30 @@ curl -X POST http://localhost:8000/api/v1/chat/stream \
   -d '{"message":"解释一下Docker","use_rag":true,"mode":"mix","render_mode":"component"}'
 ```
 
+### 生成式节点
+
+```bash
+# 重生成节点
+curl -X POST http://localhost:8000/api/v1/nodes/{node_id}/regenerate \
+  -H "Authorization: Bearer <token>"
+
+# 展开节点
+curl -X POST http://localhost:8000/api/v1/nodes/{node_id}/expand \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"message":"请详细展开"}'
+
+# 切换版本
+curl -X POST http://localhost:8000/api/v1/nodes/{node_id}/versions/{version_id}/activate \
+  -H "Authorization: Bearer <token>"
+
+# 按会话查询节点
+curl http://localhost:8000/api/v1/nodes/by-session/{session_id} \
+  -H "Authorization: Bearer <token>"
+```
+
 ### 知识库
+
 ```bash
 # 上传文档
 curl -X POST http://localhost:8000/api/v1/rag/upload-file \
@@ -271,7 +356,7 @@ curl -X POST http://localhost:8000/api/v1/rag/upload-file \
   -H "Content-Type: application/json" \
   -d '{"filename":"notes.md","content":"文档内容...","source":"学习笔记"}'
 
-# 查询知识库
+# 查询知识库（mix 模式：知识图谱+向量）
 curl -X POST http://localhost:8000/api/v1/rag/query \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
@@ -281,6 +366,8 @@ curl -X POST http://localhost:8000/api/v1/rag/query \
 curl http://localhost:8000/api/v1/rag/documents \
   -H "Authorization: Bearer <token>"
 ```
+
+> ⚠️ 知识库上传是大任务接口，前端已设 180s 超时；后端 `_wait_for_latest_doc_status` 超时 120s。
 
 ## 服务器部署（CentOS 7.9）
 
@@ -303,16 +390,34 @@ docker-compose up -d --build
 
 ### 新增生成式组件
 
-1. 在 `frontend/src/features/generative-ui/components/` 创建 `MyComponent.vue`
-2. 在 `componentRegistry.ts` 注册组件映射
+1. 在 `frontend/src/features/generative-ui/components/` 创建 `MyComponent.vue`，接收 `props` 属性
+2. 在 `componentRegistry.ts` 导入并注册组件映射
 3. 在 `backend/schemas/component.py` 添加组件类型定义
-4. 在 `backend/sys_prompts/component_protocol.md` 更新 AI 提示词
+4. 在 `backend/sys_prompts/component_protocol.md` 更新组件白名单与 props 说明
+5. 重建 backend 镜像（让新 prompt 生效）
 
-### 新增函数调用
+### 新增函数调用工具
 
 1. 在 `backend/function_calling/tools/` 创建工具函数
 2. 在 `registry.py` 注册
 3. AI 会根据组件协议中的 `actions` 自动调用
+
+### 提示词管理
+
+- 所有 AI system prompt 必须存放在 `backend/sys_prompts/*.md`
+- 禁止在 Python 代码中硬编码 prompt 字符串
+- 通过 `from backend.sys_prompts import XXX_PROMPT` 引入使用
+
+## 常见问题排查
+
+| 现象 | 根因 | 修复 |
+|------|------|------|
+| 知识库上传 499 | 前端 30s 超时 < 后端 60s+ 处理 | 前端 rag.ts 设 180s 超时 |
+| 头像上传失败 | `.env` 缺 S3 配置 | 补全 `S3_ENABLED=true` 等配置 |
+| AI 重生成 500 | 模型名不存在（如 `qwen3.7-max`） | `UPDATE ai_providers SET llm_model='qwen-plus'` |
+| 生成式历史丢失 | 未调 `loadSessionHistory` | GenerativePanel 切换会话时加载 UiNode |
+| 生成式面板不滚动 | flex 子元素滚动需父级 `overflow-hidden` | 根容器加 `overflow-hidden` |
+| 左侧用户信息不刷新 | 原生 `<img>` 缓存 | 改用 `el-avatar` + URL 加时间戳 |
 
 ## License
 
