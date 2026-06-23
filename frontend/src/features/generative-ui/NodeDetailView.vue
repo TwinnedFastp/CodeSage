@@ -2,7 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowLeft, RefreshRight } from '@element-plus/icons-vue'
+import { ArrowLeft, RefreshRight, FullScreen, Close } from '@element-plus/icons-vue'
 import * as genApi from './api'
 import ComponentRenderer from './ComponentRenderer.vue'
 import type { NodeDetail, NodeVersionSummary, ComponentProtocol } from './types'
@@ -16,6 +16,15 @@ const regenerating = ref(false)
 const nodeDetail = ref<NodeDetail | null>(null)
 const selectedVersionNo = ref(-1)
 const error = ref<string | null>(null)
+
+// 全屏模式
+const isFullscreen = ref(false)
+
+// 展开的子网页（内联展示）
+const activeWebpage = ref<{
+  title: string
+  html: string
+} | null>(null)
 
 const currentProtocol = computed<ComponentProtocol | null>(() => {
   if (!nodeDetail.value) return null
@@ -93,6 +102,10 @@ function goBack() {
   router.back()
 }
 
+function toggleFullscreen() {
+  isFullscreen.value = !isFullscreen.value
+}
+
 async function loadNode() {
   if (!nodeId.value) {
     error.value = '缺少节点 ID'
@@ -120,12 +133,23 @@ function selectCurrent() {
   selectedVersionNo.value = -1
 }
 
+// 处理组件内的交互式打开事件（表格行点击、卡片点击等）
+function handleInlineOpen(payload: { title: string; html: string }) {
+  activeWebpage.value = payload
+}
+
+// 关闭内联网页
+function closeWebpage() {
+  activeWebpage.value = null
+}
+
+// 再思考 - 生成新的专业网页
 async function onRegenerate() {
   if (!nodeId.value || regenerating.value) return
   regenerating.value = true
   try {
     await genApi.regenerateNode(nodeId.value)
-    ElMessage.success('再思考完成')
+    ElMessage.success('正在生成新版本...')
     await loadNode()
   } catch (err: any) {
     ElMessage.error(err.response?.data?.detail || '再思考失败')
@@ -140,7 +164,8 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="node-detail-page">
+  <!-- 全屏容器 -->
+  <div class="node-detail-page" :class="{ 'is-fullscreen': isFullscreen }">
     <!-- 顶部导航栏 -->
     <header class="page-header">
       <div class="header-inner">
@@ -148,6 +173,12 @@ onMounted(() => {
           <el-icon class="mr-1"><ArrowLeft /></el-icon>
           返回对话
         </el-button>
+
+        <div class="header-actions">
+          <el-button link @click="toggleFullscreen" class="fullscreen-btn">
+            <el-icon><FullScreen /></el-icon>
+          </el-button>
+        </div>
       </div>
     </header>
 
@@ -211,13 +242,35 @@ onMounted(() => {
                   :current-version-no="selectedVersionNo > -1 ? selectedVersionNo : currentNodeVersionNo"
                   :loading="regenerating"
                   @regenerate="onRegenerate"
+                  @inline-open="handleInlineOpen"
                 />
               </div>
             </div>
+
+            <!-- 内联子网页展示区 -->
+            <transition name="webpage-slide">
+              <div v-if="activeWebpage" class="inline-webpage-container">
+                <div class="webpage-toolbar">
+                  <span class="webpage-title">
+                    <el-icon class="mr-1"><FullScreen /></el-icon>
+                    {{ activeWebpage.title }}
+                  </span>
+                  <el-button link size="small" @click="closeWebpage">
+                    <el-icon><Close /></el-icon>
+                    关闭
+                  </el-button>
+                </div>
+                <iframe
+                  :srcdoc="activeWebpage.html"
+                  class="webpage-iframe"
+                  sandbox="allow-scripts allow-same-origin"
+                ></iframe>
+              </div>
+            </transition>
           </article>
 
-          <!-- 右侧：版本历史 -->
-          <aside class="sidebar">
+          <!-- 右侧：版本历史（桌面端显示） -->
+          <aside class="sidebar desktop-only">
             <div class="sidebar-card">
               <h2 class="sidebar-title">版本历史</h2>
 
@@ -279,11 +332,39 @@ onMounted(() => {
             class="btn-primary-dark"
           >
             <el-icon v-if="!regenerating" class="mr-1.5"><RefreshRight /></el-icon>
-            再思考
+            {{ regenerating ? '生成中...' : '再思考' }}
           </el-button>
           <el-button size="large" round @click="goBack" class="btn-ghost">返回</el-button>
           <span class="footer-meta">{{ formatFullTime(nodeDetail.node.created_at) }} 创建</span>
         </footer>
+
+        <!-- 移动端版本历史折叠面板 -->
+        <details class="mobile-version-panel">
+          <summary class="mobile-version-summary">
+            版本历史 ({{ sortedVersions.length + 1 }} 个版本)
+          </summary>
+          <div class="mobile-version-content">
+            <div
+              class="version-item mobile"
+              :class="{ active: selectedVersionNo === -1 }"
+              @click="selectCurrent"
+            >
+              <span class="version-no">v{{ currentNodeVersionNo }}</span>
+              <span class="version-current-badge">当前</span>
+              <span class="version-time">{{ formatFullTime(nodeDetail.node.current_version?.created_at) }}</span>
+            </div>
+            <div
+              v-for="ver in sortedVersions"
+              :key="ver.id"
+              class="version-item mobile"
+              :class="{ active: selectedVersionNo === ver.version_no }"
+              @click="selectVersion(ver)"
+            >
+              <span class="version-no">v{{ ver.version_no }}</span>
+              <span class="version-time">{{ formatRelativeTime(ver.created_at) }}</span>
+            </div>
+          </div>
+        </details>
       </template>
     </div>
   </div>
@@ -297,6 +378,31 @@ onMounted(() => {
   color: #111;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
+  transition: all 0.3s ease;
+}
+
+/* 全屏模式 */
+.node-detail-page.is-fullscreen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9999;
+  background: #FFFFFF;
+  overflow-y: auto;
+}
+.node-detail-page.is-fullscreen .page-header {
+  background: #111;
+  border-bottom-color: #333;
+}
+.node-detail-page.is-fullscreen .back-btn,
+.node-detail-page.is-fullscreen .fullscreen-btn {
+  color: white;
+}
+.node-detail-page.is-fullscreen .back-btn:hover,
+.node-detail-page.is-fullscreen .fullscreen-btn:hover {
+  color: #DDD;
 }
 
 /* ===== 顶部导航 ===== */
@@ -308,9 +414,15 @@ onMounted(() => {
   z-index: 100;
 }
 .header-inner {
-  max-width: 1200px;
-  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   padding: 12px 24px;
+}
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 .back-btn {
   color: #555;
@@ -320,12 +432,18 @@ onMounted(() => {
 .back-btn:hover {
   color: #111;
 }
+.fullscreen-btn {
+  color: #999;
+  font-size: 16px;
+}
+.fullscreen-btn:hover {
+  color: #111;
+}
 
-/* ===== 页面主体 ===== */
+/* ===== 页面主体（全宽）===== */
 .page-body {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 28px 24px 48px;
+  width: 100%;
+  padding: 28px clamp(20px, 4vw, 48px);
 }
 
 /* 骨架屏 */
@@ -353,7 +471,7 @@ onMounted(() => {
 }
 .page-title {
   font-family: Georgia, 'Times New Roman', serif;
-  font-size: 26px;
+  font-size: clamp(22px, 3vw, 32px);
   font-weight: 700;
   color: #111;
   line-height: 1.3;
@@ -366,29 +484,31 @@ onMounted(() => {
   gap: 8px;
   font-size: 13px;
   color: #888;
+  flex-wrap: wrap;
 }
 .meta-row .sep {
   color: #E0DED8;
 }
 
-/* ===== 主布局（Flexbox，不再依赖 Tailwind grid 崩溃）===== */
+/* ===== 主布局（Flexbox 全宽响应式）===== */
 .main-layout {
   display: flex;
-  gap: 20px;
+  gap: 24px;
   align-items: flex-start;
 }
 
 .content-area {
   flex: 1;
   min-width: 0; /* 防止内容溢出 */
+  min-width: 0; /* Flex 子项最小宽度 */
 }
 
 .sidebar {
-  width: 260px;
+  width: 280px;
   flex-shrink: 0;
 }
 
-/* ===== 内容卡片 ===== */
+/* ===== 内容卡片（全宽自适应）===== */
 .content-card {
   background: white;
   border-radius: 14px;
@@ -429,6 +549,51 @@ onMounted(() => {
   padding: 4px 0 0;
 }
 
+/* ===== 内联子网页展示 ===== */
+.inline-webpage-container {
+  margin-top: 20px;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid #EAE8E2;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+  background: white;
+}
+.webpage-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: #F8FAFC;
+  border-bottom: 1px solid #E8E6E1;
+}
+.webpage-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #444;
+  display: flex;
+  align-items: center;
+}
+.webpage-iframe {
+  width: 100%;
+  height: 600px;
+  border: none;
+  display: block;
+}
+
+/* 内联网页动画 */
+.webpage-slide-enter-active,
+.webpage-slide-leave-active {
+  transition: all 0.35s ease;
+}
+.webpage-slide-enter-from {
+  opacity: 0;
+  transform: translateY(20px);
+}
+.webpage-slide-leave-to {
+  opacity: 0;
+  transform: translateY(-10px);
+}
+
 /* ===== 侧边栏 ===== */
 .sidebar-card {
   background: white;
@@ -445,6 +610,11 @@ onMounted(() => {
   font-weight: 600;
   color: #111;
   margin-bottom: 14px;
+}
+
+/* 桌面端侧边栏可见 */
+.desktop-only {
+  display: block;
 }
 
 /* 版本列表 */
@@ -507,6 +677,14 @@ onMounted(() => {
   margin-left: 2px;
 }
 
+/* 移动端版本项 */
+.version-item.mobile {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 /* ===== 底部操作栏 ===== */
 .page-footer {
   display: flex;
@@ -515,6 +693,7 @@ onMounted(() => {
   margin-top: 32px;
   padding-top: 20px;
   border-top: 1px solid #F0EFE9;
+  flex-wrap: wrap;
 }
 .btn-primary-dark {
   background: #111 !important;
@@ -540,32 +719,121 @@ onMounted(() => {
   margin-left: auto;
 }
 
-/* ===== 响应式：小屏幕时侧边栏折叠到底部 ===== */
+/* ===== 移动端版本面板 ===== */
+.mobile-version-panel {
+  display: none;
+  margin-top: 20px;
+  border-radius: 14px;
+  background: white;
+  border: 1px solid #EAE8E2;
+  overflow: hidden;
+}
+.mobile-version-summary {
+  padding: 16px 20px;
+  font-weight: 600;
+  font-size: 14px;
+  color: #111;
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.mobile-version-summary::-webkit-details-marker {
+  display: none;
+}
+.mobile-version-summary::after {
+  content: '+';
+  font-size: 18px;
+  color: #888;
+  transition: transform 0.2s;
+}
+.details[open] .mobile-version-summary::after {
+  transform: rotate(45deg);
+}
+.mobile-version-content {
+  padding: 0 16px 16px;
+  border-top: 1px solid #F2F0EA;
+}
+
+/* ===== 响应式设计 ===== */
+
+/* 平板及以下：隐藏右侧边栏，显示底部折叠面板 */
 @media (max-width: 1024px) {
   .main-layout {
     flex-direction: column;
   }
-  .sidebar {
-    width: 100%;
+
+  .sidebar.desktop-only {
+    display: none; /* 隐藏桌面端侧边栏 */
   }
-  .sidebar-card {
-    position: static;
+
+  .mobile-version-panel {
+    display: block; /* 显示移动端版本面板 */
   }
-  .page-title {
-    font-size: 22px;
+
+  .webpage-iframe {
+    height: 450px; /* 减小 iframe 高度 */
   }
 }
 
+/* 手机端优化 */
 @media (max-width: 640px) {
   .page-body {
-    padding: 16px 16px 36px;
+    padding: 16px 12px 36px;
   }
-  .page-title {
-    font-size: 19px;
+
+  .header-inner {
+    padding: 10px 16px;
   }
-  .content-card-header,
+
+  .page-footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .footer-meta {
+    margin-left: 0;
+    text-align: center;
+    margin-top: 8px;
+  }
+
+  .btn-primary-dark,
+  .btn-ghost {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .content-card-header {
+    padding: 12px 16px 10px;
+  }
+
   .sidebar-card {
-    padding: 14px 16px;
+    padding: 14px;
+  }
+
+  .webpage-iframe {
+    height: 350px;
+  }
+
+  .meta-row {
+    font-size: 12px;
+  }
+}
+
+/* 超大屏幕优化 */
+@media (min-width: 1600px) {
+  .page-body {
+    padding: 32px clamp(40px, 5vw, 80px);
+  }
+
+  .sidebar {
+    width: 320px;
+  }
+
+  .webpage-iframe {
+    height: 700px;
   }
 }
 </style>

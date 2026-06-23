@@ -18,6 +18,7 @@ const emit = defineEmits<{
   (e: 'function-call', payload: { function_name?: string; params?: Record<string, any>; target_id?: string }): void
   (e: 'switch-version', payload: { versionId: string }): void
   (e: 'open-webpage', payload: { htmlContent: string; title: string }): void
+  (e: 'inline-open', payload: { title: string; html: string }): void
 }>()
 
 // 全屏网页查看器状态
@@ -62,6 +63,8 @@ function onOpenWebpage(payload: { html_content?: string; html?: string; title?: 
   webpageTitle.value = title
   showWebpageViewer.value = true
   emit('open-webpage', { htmlContent: html, title })
+  // 同时触发内联打开事件，让父组件可以在页面内展示
+  emit('inline-open', { title, html })
 }
 
 // 来自 open_webpage action 按钮点击

@@ -566,9 +566,9 @@ class UiDrawSkill:
             f"""<div style="border-bottom: {theme.border.width} solid {theme.border.color}; last-child: border-bottom: none;">
                 <div class="accordion-header" style="padding: {theme.padding.md}; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-weight: 500; color: {theme.colors.text};">
                     {item.get('title', '')}
-                    <span style="transition: transform 0.2s;">{item.get('open', False) ? '−' : '+'}</span>
+                    <span style="transition: transform 0.2s;">{'−' if item.get('open', False) else '+'}</span>
                 </div>
-                <div class="accordion-content" style="padding: 0 {theme.padding.md}; max-height: {item.get('open', False) ? '1000px' : '0'}; overflow: hidden; transition: max-height 0.3s ease;">
+                <div class="accordion-content" style="padding: 0 {theme.padding.md}; max-height: {'1000px' if item.get('open', False) else '0'}; overflow: hidden; transition: max-height 0.3s ease;">
                     <p style="padding: {theme.padding.md} 0; color: {theme.colors.textSecondary};">{item.get('content', '')}</p>
                 </div>
             </div>"""
