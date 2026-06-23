@@ -1,6 +1,5 @@
 /**
  * 注册表单逻辑：校验 + 密码强度 + 提交 + 开发模式验证链接
- * 参考若依框架：前后端双重校验、错误分类提示、防暴力刷新
  */
 import { ref, reactive, computed } from 'vue'
 import { useRouter } from 'vue-router'
@@ -11,13 +10,12 @@ import { register } from '@/api/auth'
 export function useRegisterForm() {
   const router = useRouter()
   const formRef = ref<FormInstance>()
-  const form = reactive({ email: '', password: '', confirmPassword: '' })
+  const form = reactive({ email: '', username: '', password: '', confirmPassword: '' })
   const submitting = ref(false)
   const registeredEmail = ref('')
   const devVerifyLink = ref('')
   const captchaVerified = ref(false)
   const errorMsg = ref('')
-  // 拼图验证码组件的 key，变更后强制重新挂载以重置内部状态
   const captchaKey = ref(0)
 
   const passwordValidator: FormItemRule['validator'] = (_rule, value: string, callback) => {
@@ -40,6 +38,10 @@ export function useRegisterForm() {
     email: [
       { required: true, message: '请输入邮箱', trigger: 'blur' },
       { type: 'email', message: '邮箱格式不合法', trigger: 'blur' },
+    ],
+    username: [
+      { required: true, message: '请输入用户名', trigger: 'blur' },
+      { min: 2, max: 64, message: '用户名长度需在 2-64 字符之间', trigger: 'blur' },
     ],
     password: [{ required: true, validator: passwordValidator, trigger: 'blur' }],
     confirmPassword: [{ required: true, validator: confirmValidator, trigger: 'blur' }],
@@ -64,18 +66,24 @@ export function useRegisterForm() {
   }
 
   async function onSubmit() {
-    // 防重入
     if (submitting.value) return
     errorMsg.value = ''
     if (!formRef.value) return
 
     const valid = await formRef.value.validate().catch(() => false)
     if (!valid) return
-    if (!captchaVerified.value) { ElMessage.warning('请先完成拼图验证'); return }
+    if (!captchaVerified.value) {
+      ElMessage.warning('请先完成拼图验证')
+      return
+    }
 
     submitting.value = true
     try {
-      const resp = await register({ email: form.email.trim(), password: form.password })
+      const resp = await register({
+        email: form.email.trim(),
+        username: form.username.trim(),
+        password: form.password,
+      })
       registeredEmail.value = form.email.trim()
       if (resp.detail) {
         const match = resp.detail.match(/(http[^)]+verify-email\?token=[^"]+)/)
@@ -98,7 +106,6 @@ export function useRegisterForm() {
         ElMessage.error(msg)
       }
 
-      // 注册失败后重置拼图验证（安全考虑）
       captchaVerified.value = false
       captchaKey.value++
     } finally {
@@ -106,7 +113,9 @@ export function useRegisterForm() {
     }
   }
 
-  function goLogin() { router.push('/login') }
+  function goLogin() {
+    router.push('/login')
+  }
 
   function handleVerifyClick(e: MouseEvent) {
     if (devVerifyLink.value.includes('verify-email')) {
@@ -117,9 +126,21 @@ export function useRegisterForm() {
   }
 
   return {
-    formRef, form, rules, submitting, registeredEmail, devVerifyLink, captchaVerified,
-    errorMsg, captchaKey,
-    strength, strengthLabel, strengthColor,
-    onCaptchaVerified, onSubmit, goLogin, handleVerifyClick,
+    formRef,
+    form,
+    rules,
+    submitting,
+    registeredEmail,
+    devVerifyLink,
+    captchaVerified,
+    errorMsg,
+    captchaKey,
+    strength,
+    strengthLabel,
+    strengthColor,
+    onCaptchaVerified,
+    onSubmit,
+    goLogin,
+    handleVerifyClick,
   }
 }

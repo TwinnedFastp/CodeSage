@@ -9,12 +9,16 @@ from backend.db.session import get_db
 from backend.api.deps import get_current_user
 from backend.models.user import User
 from backend.schemas.auth import (
+    AvatarCommitRequest,
+    AvatarUploadRequest,
+    AvatarUploadResponse,
     LoginRequest,
     MessageResponse,
     RefreshRequest,
     RegisterRequest,
     TokenResponse,
     UserOut,
+    UserProfileUpdate,
     VerifyEmailRequest,
 )
 from backend.services import auth_service
@@ -34,7 +38,7 @@ def _client_ip(request: Request) -> str:
 async def register(payload: RegisterRequest, request: Request, db: AsyncSession = Depends(get_db)):
     """注册：仅邮箱 + 密码，注册后发送验证邮件。"""
     try:
-        user, verify_link = await auth_service.register(payload.email, payload.password, db)
+        user, verify_link = await auth_service.register(payload.email, payload.password, db, payload.username)
     except auth_service.AuthError as exc:
         return JSONResponse(status_code=exc.status, content={"code": exc.code, "message": exc.message})
 
@@ -97,3 +101,33 @@ async def refresh(payload: RefreshRequest):
 async def me(current_user: User = Depends(get_current_user)):
     """获取当前登录用户信息。"""
     return current_user
+
+
+@router.put("/me", response_model=UserOut)
+async def update_me(
+    payload: UserProfileUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """更新当前用户资料。"""
+    return await auth_service.update_profile(current_user, payload.username, db)
+
+
+@router.post("/me/avatar/upload", response_model=AvatarUploadResponse)
+async def create_avatar_upload(
+    payload: AvatarUploadRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """创建头像上传预签名地址。"""
+    result = await auth_service.issue_avatar_upload(current_user, payload.filename, payload.content_type)
+    return AvatarUploadResponse(**result)
+
+
+@router.post("/me/avatar/commit", response_model=UserOut)
+async def commit_avatar(
+    payload: AvatarCommitRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """提交头像上传结果并保存用户头像地址。"""
+    return await auth_service.commit_avatar(current_user, payload.object_key, payload.avatar_url, db)

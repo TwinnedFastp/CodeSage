@@ -33,6 +33,7 @@ data/
 # docker_data：保留可提交的配置文件，仅忽略运行时数据
 docker_data/lightrag/
 docker_data/redis/data/
+docker_data/minio/
 
 # 本地学习日志（self-improvement skill，按其默认建议保持本地）
 .learnings/
@@ -45,3 +46,4 @@ overview.md
 
 # 临时压测结果文件
 backend/tests/stress_result.txt
+plan.md

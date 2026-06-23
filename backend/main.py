@@ -1,17 +1,26 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from backend.api.v1.api import api_router
 from backend.core.config import settings
+from backend.init_db import init_db
 from backend.services.auth_service import AuthError
 from backend.services.conversation_service import ConversationError
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await init_db()
+    yield
+
+
 # --- 初始化 FastAPI 应用 ---
-# title: 自动生成的 API 文档标题
-# openapi_url: OpenAPI 规范文件的路径
 app = FastAPI(
     title=settings.PROJECT_NAME,
-    openapi_url=f"{settings.API_V1_STR}/openapi.json"
+    openapi_url=f"{settings.API_V1_STR}/openapi.json",
+    lifespan=lifespan,
 )
 
 # --- 全局异常处理器 ---

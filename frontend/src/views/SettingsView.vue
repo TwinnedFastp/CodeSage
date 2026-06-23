@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
   ArrowLeft, Plus, User as UserIcon, Cpu,
-  Check, View, Hide, Star,
+  Check, View, Hide, Star, Coin,
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useProviders } from '@/composables/useProviders'
@@ -123,12 +123,56 @@ async function onLogout() {
   router.push('/login')
 }
 
+const profileForm = ref({ username: auth.user?.username || '' })
+const avatarUploading = ref(false)
 const maskedEmail = computed(() => {
   const e = auth.user?.email || ''
   if (!e) return ''
   const [name, domain] = e.split('@')
   return domain ? `${name[0]}***@${domain}` : e
 })
+const displayName = computed(() => auth.user?.username || maskedEmail.value || 'CodeSage 用户')
+const avatarInitial = computed(() => displayName.value.slice(0, 1).toUpperCase())
+watch(() => auth.user?.username, (username) => {
+  profileForm.value.username = username || ''
+})
+
+async function saveProfile() {
+  const username = profileForm.value.username.trim()
+  if (!username) {
+    ElMessage.warning('请填写用户名')
+    return
+  }
+  try {
+    await auth.updateProfile(username)
+    ElMessage.success('用户名已更新')
+  } catch (error: any) {
+    ElMessage.error(error.response?.data?.message || '保存失败，请稍后重试')
+  }
+}
+
+async function onAvatarChange(file: File) {
+  if (!file.type.startsWith('image/')) {
+    ElMessage.warning('请选择图片文件')
+    return
+  }
+  avatarUploading.value = true
+  try {
+    await auth.uploadAvatar(file)
+    ElMessage.success('头像已更新')
+  } catch (error: any) {
+    ElMessage.error(error.response?.data?.message || '头像上传失败')
+  } finally {
+    avatarUploading.value = false
+  }
+}
+
+function onAvatarInput(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (file) onAvatarChange(file)
+  input.value = ''
+}
 </script>
 
 <template>
@@ -195,6 +239,13 @@ const maskedEmail = computed(() => {
       <!-- 顶部标签条 -->
       <nav class="flex px-2 pb-2 gap-1">
         <button
+          @click="router.push('/database-admin')"
+          class="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg transition-all text-[13px] text-[#666]"
+        >
+          <el-icon :size="15"><Coin /></el-icon>
+          <span>数据库</span>
+        </button>
+        <button
           @click="activeTab = 'account'"
           :class="['flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg transition-all text-[13px]', activeTab === 'account' ? 'bg-white text-[#111] font-medium shadow-sm' : 'text-[#666]']"
         >
@@ -223,17 +274,49 @@ const maskedEmail = computed(() => {
 
           <div class="space-y-6">
             <div class="bg-white rounded-2xl border border-[#E8E6E1] p-6">
-              <div class="flex items-center gap-4 mb-5">
-                <div class="w-14 h-14 rounded-full bg-[#F3F2EE] flex items-center justify-center text-[#555]">
-                  <el-icon :size="24"><UserIcon /></el-icon>
+              <div class="flex items-center justify-between gap-4">
+                <div class="flex items-center gap-4">
+                  <div class="w-12 h-12 rounded-xl bg-[#111] text-white flex items-center justify-center">
+                    <el-icon :size="22"><Coin /></el-icon>
+                  </div>
+                  <div>
+                    <p class="text-[15px] font-semibold">PostgreSQL 数据库管理</p>
+                    <p class="text-[12px] text-[#999] mt-0.5">查看 public 表、分页查询、按主键新增/编辑/删除记录</p>
+                  </div>
                 </div>
-                <div>
-                  <p class="text-[15px] font-semibold">{{ auth.user?.email }}</p>
-                  <p class="text-[12px] text-[#999]">注册邮箱</p>
+                <button
+                  @click="router.push('/database-admin')"
+                  class="shrink-0 px-5 py-2 rounded-full text-[13px] font-medium bg-[#111] text-white hover:bg-[#333] transition-colors"
+                >
+                  进入管理
+                </button>
+              </div>
+            </div>
+
+            <div class="bg-white rounded-2xl border border-[#E8E6E1] p-6">
+              <div class="flex flex-col sm:flex-row sm:items-center gap-5 mb-6">
+                <div class="relative w-20 h-20 rounded-full overflow-hidden bg-[#111] text-white flex items-center justify-center text-2xl font-serif shrink-0">
+                  <img v-if="auth.user?.avatar_url" :src="auth.user.avatar_url" class="w-full h-full object-cover" alt="用户头像" />
+                  <span v-else>{{ avatarInitial }}</span>
+                </div>
+                <div class="flex-1 min-w-0">
+                  <p class="text-[16px] font-semibold truncate">{{ displayName }}</p>
+                  <p class="text-[12px] text-[#999] mt-1 truncate">{{ auth.user?.email }}</p>
+                  <div class="mt-3 flex flex-wrap items-center gap-2">
+                    <label class="inline-flex items-center justify-center px-4 py-2 rounded-full text-[12px] font-medium bg-[#111] text-white hover:bg-[#333] cursor-pointer transition-colors">
+                      <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" class="hidden" :disabled="avatarUploading" @change="onAvatarInput" />
+                      {{ avatarUploading ? '上传中…' : '更换头像' }}
+                    </label>
+                    <button class="px-4 py-2 rounded-full text-[12px] font-medium bg-[#F3F2EE] text-[#666] hover:text-[#111] transition-colors" @click="saveProfile">保存用户名</button>
+                  </div>
                 </div>
               </div>
 
               <div class="space-y-4 pt-4 border-t border-[#F3F2EE]">
+                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                  <span class="text-[13px] text-[#666]">用户名</span>
+                  <input v-model="profileForm.username" class="w-full sm:w-64 px-3 py-2 rounded-xl bg-[#FAFAFA] border border-[#E8E6E1] text-[13px] outline-none focus:border-[#111]" />
+                </div>
                 <div class="flex items-center justify-between">
                   <span class="text-[13px] text-[#666]">邮箱验证状态</span>
                   <span :class="['text-[12px] px-3 py-1 rounded-full font-medium', auth.user?.email_verified ? 'bg-[#E8F5E9] text-[#2E7D32]' : 'bg-[#FFF3E0] text-[#E65100]']">

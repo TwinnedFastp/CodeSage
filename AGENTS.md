@@ -237,11 +237,15 @@ CodeSage/
 认证前缀: 所有需要登录的接口使用 Depends(get_current_user)
 
 路由分组:
-  /api/v1/auth/*        ← auth.py       (无需认证)
-  /api/v1/chat/*        ← chat.py       (需认证)
+  /api/v1/auth/*        ← auth.py          (无需认证)
+  /api/v1/chat/*        ← chat.py          (需认证)
   /api/v1/conversations/* ← conversations.py (需认证)
-  /api/v1/providers/*   ← providers.py  (需认证)
+  /api/v1/providers/*   ← providers.py     (需认证)
   /api/v1/rag/*         ← rag/endpoints.py (需认证)
+  /api/v1/nodes/*       ← nodes.py         (需认证，生成式交互节点)
+  /api/v1/knowledge/*   ← knowledge.py     (需认证，知识库网关)
+  /api/v1/functions/*   ← functions.py     (需认证，Function Calling)
+  /api/v1/database-admin/* ← database_admin.py (需认证，数据库管理)
 ```
 
 ### 4.2 响应格式
@@ -288,8 +292,27 @@ export function someAction(payload: SomeIn): Promise<SomeOut> {
 | `JWT_SECRET` | JWT 签名密钥（生产必改！） | `please-change-this-secret-in-production` |
 | `LIGHTRAG_ENABLED` | 是否启用知识库功能 | `true` |
 | `SKIP_EMAIL_VERIFICATION` | 开发模式跳过邮箱验证 | `false` |
+| `S3_ENABLED` | 是否启用 MinIO 对象存储（头像等） | `true` |
+| `S3_ENDPOINT_URL` | MinIO API 端点（Docker 内部使用） | `http://minio:9000` |
+| `S3_PUBLIC_BASE_URL` | MinIO API 公开地址（浏览器使用） | `http://localhost:9000` |
 
 > **LLM 相关配置（API Key / Model / Embedding）不在 .env 中管理**，而是通过前端「设置 → 模型供应商」页面写入 `ai_providers` 数据库表。
+
+### 5.3 MinIO 对象存储
+
+项目使用 MinIO（S3 兼容）存储用户头像等文件资源：
+
+| 端口 | 用途 | 访问地址 |
+|------|------|----------|
+| 9000 | S3 API | `http://localhost:9000` |
+| 9001 | Web 控制台 | `http://localhost:9001` |
+
+**MinIO 控制台登录**：打开浏览器访问 `http://localhost:9001`，使用以下凭据：
+
+- 用户名: `codesage_minio`（默认，可修改 `MINIO_ROOT_USER` 环境变量）
+- 密码: `codesage_minio_change_me_32_chars`（默认，**生产环境必须修改** `MINIO_ROOT_PASSWORD`）
+
+头像上传流程：前端调用 `POST /api/v1/auth/me/avatar/upload` 获取 MinIO 预签名上传 URL → 浏览器直接 `PUT` 上传文件到 MinIO → 调用 `POST /api/v1/auth/me/avatar/commit` 保存引用。
 
 ---
 

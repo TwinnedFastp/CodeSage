@@ -195,10 +195,14 @@ def _extract_fallback_title(msgs: list[ChatMessage]) -> str:
 # ==================================================================
 async def add_message(
     db: AsyncSession, user_id: int, session_id: UUID, role: str, content: str,
+    render_mode: str = "text",
 ) -> ChatMessage:
     # 校验会话归属
     await get_session(db, user_id, session_id)
-    msg = ChatMessage(user_id=user_id, session_id=session_id, role=role, content=content)
+    msg = ChatMessage(
+        user_id=user_id, session_id=session_id, role=role,
+        content=content, render_mode=render_mode,
+    )
     db.add(msg)
     try:
         await db.commit()
@@ -220,6 +224,18 @@ async def list_messages(
         .limit(limit).offset(offset)
     )
     return list(result.scalars().all())
+
+
+async def build_short_term_messages(
+    db: AsyncSession, user_id: int, session_id, limit: int = 20
+) -> list[dict]:
+    """组装短期记忆：取最近 limit 条消息转为 {role, content} 字典列表。"""
+    sid = UUID(session_id) if isinstance(session_id, str) else session_id
+    msgs = await list_messages(db, user_id, sid, limit=limit, offset=0)
+    return [
+        {"role": "user" if m.role == "user" else "assistant", "content": m.content}
+        for m in msgs
+    ]
 
 
 # ==================================================================

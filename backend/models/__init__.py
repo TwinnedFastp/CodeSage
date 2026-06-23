@@ -11,6 +11,8 @@ from backend.models.conversation import (
     UserTask,
 )
 from backend.models.provider import AIProvider
+from backend.models.ui_node import UiNode, UiNodeVersion, UiNodeRelation
+from backend.models.audit import FunctionCallAudit
 
 __all__ = [
     "Base",
@@ -22,4 +24,8 @@ __all__ = [
     "UserFact",
     "UserTask",
     "AIProvider",
+    "UiNode",
+    "UiNodeVersion",
+    "UiNodeRelation",
+    "FunctionCallAudit",
 ]

@@ -2,6 +2,8 @@
 export interface User {
   id: number
   email: string
+  username: string
+  avatar_url?: string | null
   email_verified: boolean
   created_at: string
   last_login_ip?: string
@@ -31,6 +33,7 @@ export interface ChatMessage {
   user_id: number
   role: 'user' | 'assistant' | 'system'
   content: string
+  render_mode?: 'text' | 'component'
   created_at: string
 }
 

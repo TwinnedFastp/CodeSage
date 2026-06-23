@@ -192,10 +192,20 @@ async def get_active_provider_config(db: AsyncSession, user_id: int) -> dict | N
     provider = result.scalar_one_or_none()
     if not provider:
         return None
+
+    # 解密 API Key：若密钥变更导致解密失败返回 None，记录明显日志便于排查
+    decrypted_key = decrypt(provider.llm_api_key)
+    if provider.llm_api_key and not decrypted_key:
+        logger.error(
+            "供应商 API Key 解密失败 user_id=%s provider_id=%s；"
+            "可能是 FIELD_ENCRYPTION_KEY 变更或历史随机临时密钥丢失，需用户重新填写 API Key。",
+            user_id, provider.id,
+        )
+
     return {
         "id": provider.id,
         "provider_name": provider.provider_name,
-        "llm_api_key": decrypt(provider.llm_api_key),  # 返回明文供内部使用
+        "llm_api_key": decrypted_key,  # 返回明文供内部使用
         "llm_base_url": provider.llm_base_url,
         "llm_model": provider.llm_model,
         "embedding_model": provider.embedding_model,

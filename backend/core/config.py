@@ -37,7 +37,8 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
 
     # ---- 字段级加密密钥（Fernet，base64 urlsafe）----
-    # 留空时由 crypto 模块生成临时密钥（仅限开发，重启后无法解密历史数据）
+    # 留空时由 crypto 模块基于 JWT_SECRET 派生稳定密钥（开发兜底，跨重启可复用）。
+    # 生产环境务必显式配置一个高熵随机字符串，且变更后历史加密数据将无法解密。
     FIELD_ENCRYPTION_KEY: str = ""
 
     # ---- 邮箱验证 / SMTP 配置 ----
@@ -49,8 +50,18 @@ class Settings(BaseSettings):
     SMTP_USER: str = ""
     SMTP_PASSWORD: str = ""
     SMTP_FROM: str = ""
+    SMTP_TIMEOUT_SECONDS: float = 5.0
 
-    # ---- 登录安全策略 ----
+    # ---- S3 / MinIO 对象存储配置 ----
+    S3_ENABLED: bool = False
+    S3_ENDPOINT_URL: str = ""
+    S3_PUBLIC_BASE_URL: str = ""
+    S3_ACCESS_KEY_ID: str = ""
+    S3_SECRET_ACCESS_KEY: str = ""
+    S3_BUCKET_AVATARS: str = "codesage-avatars"
+    S3_REGION: str = "us-east-1"
+    S3_USE_SSL: bool = False
+    S3_PRESIGN_EXPIRE_SECONDS: int = 300
     LOGIN_MAX_FAIL_ATTEMPTS: int = 5
     LOGIN_LOCK_MINUTES: int = 15
     EMAIL_VERIFY_EXPIRE_HOURS: int = 24
@@ -63,6 +74,10 @@ class Settings(BaseSettings):
     LIGHTRAG_WORKING_DIR: str = "data/lightrag"
     # 是否启用 LightRAG。关闭后，RAG 接口会给出明确提示，普通聊天仍可使用。
     LIGHTRAG_ENABLED: bool = True
+    # 是否使用离线分词器（默认开启，适合国内无法访问 tiktoken 词表 CDN 的环境）。
+    # 开启时注入纯 Python 分词器，跳过 tiktoken 远程下载 o200k_base；
+    # 关闭后回退到 LightRAG 默认的 TiktokenTokenizer（需能访问 Azure Blob）。
+    RAG_OFFLINE_TOKENIZER: bool = True
     # 注意：AI 模型供应商配置（API Key / Base URL / 模型名 / Embedding 维度等）
     # 已迁移至数据库 ai_providers 表，通过前端「设置 → 模型供应商」页面管理。
     # 每个用户可配置多个供应商并启用其中一个，无需在 .env 中配置 LLM 相关项。
@@ -72,6 +87,9 @@ class Settings(BaseSettings):
         case_sensitive = True
         # 指定环境变量文件的位置
         env_file = ".env"
+        # 忽略 .env / 环境中未声明的字段（如 LightRAG 运行期注入的 POSTGRES_HOST 等历史变量），
+        # 避免多余的运行期变量导致 Settings 校验失败、使整个后端无法导入。
+        extra = "ignore"
 
     @property
     def async_database_url(self) -> str:

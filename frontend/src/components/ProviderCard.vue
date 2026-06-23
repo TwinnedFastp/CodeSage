@@ -9,8 +9,9 @@ import type { Provider } from '@/api/providers'
  *       + 启用开关 + 编辑 / 删除操作。
  *
  * 视觉规范（杂志风）：
- * - 启用态：黑色顶条 + 黑色图标背景 + 加重边框；
- * - 非启用态：浅边框，hover 时上浮 0.5 + 阴影加深，呈现可点击的卡片质感；
+ * - 两种状态统一应用 hover 上浮 0.5 + 阴影加深，保证新样式在开关切换时一致；
+ * - 启用态：黑色顶条 + 黑色图标背景 + 加重边框 + "使用中" 徽标；
+ * - 非启用态：浅边框，hover 时边框略微加深；
  * - 配置详情网格在 sm 及以上双列，小屏自动单列，避免长模型名挤换行。
  */
 defineProps<{
@@ -27,11 +28,13 @@ const emit = defineEmits<{
 <template>
   <div
     :class="[
-      'group relative bg-white rounded-2xl border transition-all duration-300 overflow-hidden',
-      // 启用态边框 + 阴影；非启用态浅边框，hover 时上浮 + 阴影加深
+      'group relative bg-white rounded-2xl border transition-all duration-300 overflow-hidden hover:-translate-y-0.5',
+      // 启用态：黑色加重边框 + 更明显的静态阴影；hover 时阴影进一步加深
+      // 非启用态：浅边框；hover 时边框加深 + 阴影浮现
+      // 两种状态都统一上浮 0.5，保证开关切换时新样式一致
       provider.is_enabled
-        ? 'border-[#111] shadow-[0_4px_20px_rgb(0,0,0,0.06)]'
-        : 'border-[#E8E6E1] hover:border-[#D1CFCA] hover:shadow-[0_12px_32px_rgb(0,0,0,0.10)] hover:-translate-y-0.5',
+        ? 'border-[#111] shadow-[0_4px_20px_rgb(0,0,0,0.06)] hover:shadow-[0_14px_34px_rgb(0,0,0,0.14)]'
+        : 'border-[#E8E6E1] hover:border-[#D1CFCA] shadow-[0_1px_3px_rgb(0,0,0,0.04)] hover:shadow-[0_14px_34px_rgb(0,0,0,0.12)]',
     ]"
   >
     <!-- 启用标识条：卡片顶部 3px 黑色细条 -->

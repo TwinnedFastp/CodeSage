@@ -48,6 +48,7 @@ class MessageOut(BaseModel):
     user_id: int
     role: str
     content: str
+    render_mode: str = "text"
     created_at: datetime
 
     class Config:

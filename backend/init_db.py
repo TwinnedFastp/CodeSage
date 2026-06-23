@@ -17,7 +17,7 @@ from sqlalchemy import text
 
 from backend.db.session import engine
 # 导入全部模型，触发 Base.metadata 注册
-from backend.models import Base, User, LoginLog, ChatSession, ChatMessage, UserPreference, UserFact, UserTask, AIProvider  # noqa: F401
+from backend.models import Base, User, LoginLog, ChatSession, ChatMessage, UserPreference, UserFact, UserTask, AIProvider, UiNode, UiNodeVersion, UiNodeRelation, FunctionCallAudit  # noqa: F401
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("init_db")
@@ -30,9 +30,17 @@ async def init_db() -> None:
         # 但显式启用保证兼容性）
         logger.info("启用 pgcrypto 扩展（gen_random_uuid 依赖）...")
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS pgcrypto"))
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
 
         logger.info("开始创建表结构...")
         await conn.run_sync(Base.metadata.create_all)
+        await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS username VARCHAR(64)"))
+        await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url VARCHAR(1024)"))
+        await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_object_key VARCHAR(512)"))
+        await conn.execute(text("UPDATE users SET username = split_part(email, '@', 1) WHERE username IS NULL OR username = ''"))
+        await conn.execute(text("ALTER TABLE users ALTER COLUMN username SET NOT NULL"))
+        # chat_messages 加 render_mode 列：区分文本消息和生成式组件消息
+        await conn.execute(text("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS render_mode VARCHAR(16) NOT NULL DEFAULT 'text'"))
         logger.info("表结构创建完成（已存在的表跳过）")
 
 
