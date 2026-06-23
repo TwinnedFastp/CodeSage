@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { ExternalLink } from '@element-plus/icons-vue'
+import { Link } from '@element-plus/icons-vue'
 
 const props = defineProps<{
   props: {
@@ -62,9 +62,9 @@ function handleClick() {
     @click="handleClick"
   >
     <template #icon v-if="props.props.icon === 'external'">
-      <el-icon><ExternalLink /></el-icon>
+      <el-icon><Link /></el-icon>
     </template>
     {{ props.props.text || '按钮' }}
-    <ExternalLink v-if="props.props.href && props.props.icon !== 'external'" class="ml-1.5" :size="14" />
+    <Link v-if="props.props.href && props.props.icon !== 'external'" class="ml-1.5" />
   </el-button>
 </template>
