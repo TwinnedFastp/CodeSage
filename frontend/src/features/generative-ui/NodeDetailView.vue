@@ -185,14 +185,14 @@ onMounted(() => {
           </div>
         </div>
 
-        <!-- 卡片网格：左 60% 组件渲染 + 右 40% 版本历史 -->
+        <!-- 卡片网格：左 65% 组件渲染 + 右 35% 版本历史 -->
         <div class="grid grid-cols-1 lg:grid-cols-5 gap-6">
           <!-- 左侧：当前组件渲染 -->
-          <div class="lg:col-span-3">
-            <div class="rounded-2xl bg-[#F3F2EE] border border-[#E8E6E1] p-5 md:p-6 shadow-[0_2px_12px_rgb(0,0,0,0.03)]">
-              <div class="flex items-center justify-between mb-4">
+          <div class="lg:col-span-[3/5]">
+            <div class="detail-render-area">
+              <div class="render-header">
                 <h2 class="font-serif text-lg text-[#111111]">
-                  节点渲染
+                  内容渲染
                   <span v-if="selectedVersionNo > -1" class="text-[#777777] text-[13px] ml-2 font-sans">v{{ selectedVersionNo }}</span>
                   <span v-else class="text-[#777777] text-[13px] ml-2 font-sans">当前版本</span>
                 </h2>
@@ -214,8 +214,8 @@ onMounted(() => {
           </div>
 
           <!-- 右侧：版本历史 -->
-          <div class="lg:col-span-2">
-            <div class="rounded-2xl bg-[#F3F2EE] border border-[#E8E6E1] p-5 md:p-6 shadow-[0_2px_12px_rgb(0,0,0,0.03)] sticky top-8">
+          <div class="lg:col-span-[2/5]">
+            <div class="detail-sidebar">
               <h2 class="font-serif text-lg text-[#111111] mb-5">版本历史</h2>
 
               <el-empty v-if="sortedVersions.length === 0" description="暂无版本" :image-size="80" />
@@ -318,3 +318,31 @@ onMounted(() => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.detail-render-area {
+  background: white;
+  border-radius: 16px;
+  border: 1px solid #E8E6E1;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 4px 20px rgba(0,0,0,0.03);
+  overflow: hidden;
+}
+
+.render-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 22px 14px;
+  border-bottom: 1px solid #F0EFE9;
+}
+
+.detail-sidebar {
+  background: white;
+  border-radius: 16px;
+  border: 1px solid #E8E6E1;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 4px 20px rgba(0,0,0,0.03);
+  padding: 22px;
+  position: sticky;
+  top: 24px;
+}
+</style>

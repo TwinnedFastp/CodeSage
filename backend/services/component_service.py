@@ -66,7 +66,7 @@ async def generate_component_protocol(
     resp = await client.chat.completions.create(
         model=cfg["llm_model"],
         messages=messages,
-        temperature=0.4,
+        temperature=0.65,
         stream=False,
     )
     raw = resp.choices[0].message.content or ""
@@ -97,7 +97,7 @@ async def stream_component_protocol_raw(
         stream = await client.chat.completions.create(
             model=cfg["llm_model"],
             messages=messages,
-            temperature=0.4,
+            temperature=0.65,
             stream=True,
         )
         async for chunk in stream:

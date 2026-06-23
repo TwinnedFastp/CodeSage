@@ -91,24 +91,73 @@ function onVersion(versionId: string) {
 </script>
 
 <template>
-  <div class="rounded-2xl bg-white border border-[#E8E6E1] p-5 md:p-6 shadow-[0_2px_12px_rgb(0,0,0,0.03)]">
-    <h3 v-if="protocol.title" class="font-serif text-xl text-[#111111] leading-snug mb-4">{{ protocol.title }}</h3>
+  <div class="generative-renderer">
+    <!-- 标题区 -->
+    <div v-if="protocol.title" class="renderer-title-section">
+      <h3 class="font-serif text-2xl text-[#111111] leading-snug">{{ protocol.title }}</h3>
+    </div>
 
-    <div class="space-y-4">
+    <!-- 组件流式渲染 -->
+    <div class="renderer-components">
       <template v-for="(c, i) in protocol.components" :key="c.id || c.type + '_' + i">
+        <!-- hero_section: 全宽沉浸式渲染 -->
+        <component
+          v-if="componentRegistry[c.type] && c.type === 'hero_section'"
+          :is="componentRegistry[c.type]"
+          :props="c.props"
+          class="hero-full-width"
+        />
+
+        <!-- grid_layout: 网格容器特殊处理 -->
+        <component
+          v-else-if="componentRegistry[c.type] && c.type === 'grid_layout'"
+          :is="componentRegistry[c.type]"
+          :props="c.props"
+          class="grid-wrapper"
+        />
+
+        <!-- chart: 图表全宽展示 -->
+        <component
+          v-else-if="componentRegistry[c.type] && c.type === 'chart'"
+          :is="componentRegistry[c.type]"
+          :props="c.props"
+          class="chart-block"
+        />
+
+        <!-- compare: 对比表全宽 -->
+        <component
+          v-else-if="componentRegistry[c.type] && c.type === 'compare'"
+          :is="componentRegistry[c.type]"
+          :props="c.props"
+          class="compare-block"
+        />
+
+        <!-- timeline: 时间线全宽 -->
+        <component
+          v-else-if="componentRegistry[c.type] && c.type === 'timeline'"
+          :is="componentRegistry[c.type]"
+          :props="c.props"
+          class="timeline-block"
+        />
+
         <!-- webpage 类型组件：监听 open 事件 -->
         <component
-          v-if="componentRegistry[c.type] && c.type === 'webpage'"
+          v-else-if="componentRegistry[c.type] && c.type === 'webpage'"
           :is="componentRegistry[c.type]"
           :props="c.props"
+          class="webpage-block"
           @open="onOpenWebpage"
         />
-        <!-- 其他普通组件 -->
-        <component
-          v-else-if="componentRegistry[c.type]"
-          :is="componentRegistry[c.type]"
-          :props="c.props"
-        />
+
+        <!-- 其他普通组件：标准卡片包裹 -->
+        <div v-else-if="componentRegistry[c.type]" class="standard-card">
+          <component
+            :is="componentRegistry[c.type]"
+            :props="c.props"
+          />
+        </div>
+
+        <!-- 未注册组件 -->
         <UnknownBlock v-else :props="c.props" :type="c.type" />
       </template>
     </div>
@@ -202,6 +251,84 @@ function onVersion(versionId: string) {
 </template>
 
 <style scoped>
+.generative-renderer {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.renderer-title-section {
+  padding-bottom: 20px;
+  margin-bottom: 4px;
+}
+
+.renderer-components {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Hero 全宽沉浸式 */
+.hero-full-width {
+  margin: -5px -6px 0;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+/* Grid 布局容器 */
+.grid-wrapper {
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+/* 图表全宽展示 */
+.chart-block {
+  background: white;
+  border-radius: 14px;
+  padding: 20px;
+  border: 1px solid #E8E6E1;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  transition: box-shadow 0.2s ease;
+}
+.chart-block:hover {
+  box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+}
+
+/* 对比表全宽 */
+.compare-block {
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+/* 时间线全宽 */
+.timeline-block {
+  background: white;
+  border-radius: 14px;
+  padding: 24px;
+  border: 1px solid #E8E6E1;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}
+
+/* Webpage 入口卡片 */
+.webpage-block {
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+/* 标准卡片包裹（text_block / list / stat / tabs / accordion 等） */
+.standard-card {
+  background: white;
+  border-radius: 14px;
+  padding: 20px 22px;
+  border: 1px solid #E8E6E1;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+  transition: all 0.2s ease;
+}
+.standard-card:hover {
+  box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+  border-color: #D1CFCA;
+}
+
 .webpage-fade-enter-active,
 .webpage-fade-leave-active {
   transition: opacity 0.25s ease, transform 0.25s ease;
