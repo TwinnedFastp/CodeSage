@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
-import { ArrowRight, Eye, EyeOff } from '@element-plus/icons-vue'
+import { reactive } from 'vue'
+import { ArrowRight, View, ViewOff } from '@element-plus/icons-vue'
 
 const props = defineProps<{
   props: {
@@ -103,7 +103,7 @@ function handleSubmit() {
           >
             <template #suffix>
               <el-button text @click="togglePassword(field.name)">
-                <el-icon><EyeOff v-if="showPassword[field.name]" /><Eye v-else /></el-icon>
+                <el-icon><ViewOff v-if="showPassword[field.name]" /><View v-else /></el-icon>
               </el-button>
             </template>
           </el-input>

@@ -55,16 +55,16 @@ function handleClick() {
   <el-button
     :type="buttonType"
     :size="buttonSize"
-    :disabled="props.disabled"
-    :loading="props.loading"
-    :round="props.round"
+    :disabled="props.props.disabled"
+    :loading="props.props.loading"
+    :round="props.props.round"
     class="transition-all duration-200 hover:shadow-lg"
     @click="handleClick"
   >
-    <template #icon v-if="props.icon === 'external'">
+    <template #icon v-if="props.props.icon === 'external'">
       <el-icon><ExternalLink /></el-icon>
     </template>
-    {{ props.text || '按钮' }}
-    <ExternalLink v-if="props.href && props.icon !== 'external'" class="ml-1.5" :size="14" />
+    {{ props.props.text || '按钮' }}
+    <ExternalLink v-if="props.props.href && props.props.icon !== 'external'" class="ml-1.5" :size="14" />
   </el-button>
 </template>
