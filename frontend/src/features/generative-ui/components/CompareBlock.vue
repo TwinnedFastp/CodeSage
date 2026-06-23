@@ -26,19 +26,23 @@ function onItemClick(item: CompareItem, index: number) {
   const leftHtml = typeof item.left === 'object' ? item.left.html : null
   const rightHtml = typeof item.right === 'object' ? item.right.html : null
 
-  if (leftHtml || rightHtml) {
-    emit('item-click', {
-      item,
-      index,
-      html: leftHtml || rightHtml || '',
-      title: `${item.label} - 详情`
-    })
-  }
+  // 始终触发点击事件，让父组件决定如何处理
+  emit('item-click', {
+    item,
+    index,
+    html: leftHtml || rightHtml || '',
+    title: `${item.label} - 详情`,
+  })
 }
 
-// 判断单元格是否可点击
+// 判断单元格是否可点击（有 HTML 内容时显示特殊样式）
 function isClickable(value: any): boolean {
   return typeof value === 'object' && value !== null && value.html
+}
+
+// 所有行都视为可交互
+function isRowInteractive(): boolean {
+  return true
 }
 </script>
 
@@ -57,7 +61,7 @@ function isClickable(value: any): boolean {
       <div
         v-for="(item, index) in items"
         :key="index"
-        class="compare-row"
+        class="compare-row interactive-row"
         :class="{ 'has-action': isClickable(item.left) || isClickable(item.right) }"
         @click="onItemClick(item, index)"
       >
@@ -121,6 +125,15 @@ function isClickable(value: any): boolean {
 
 .compare-row:hover {
   background: #FAFAFA;
+}
+
+/* 所有行可点击 */
+.compare-row.interactive-row {
+  cursor: pointer;
+}
+
+.compare-row.interactive-row:hover {
+  background: #F0F7FF;
 }
 
 .compare-row.has-action {

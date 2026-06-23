@@ -19,6 +19,7 @@ const emit = defineEmits<{
   (e: 'switch-version', payload: { versionId: string }): void
   (e: 'open-webpage', payload: { htmlContent: string; title: string }): void
   (e: 'inline-open', payload: { title: string; html: string }): void
+  (e: 'ai-ask', payload: { question: string; context: string }): void
 }>()
 
 // 全屏网页查看器状态
@@ -91,6 +92,47 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 function onVersion(versionId: string) {
   emit('switch-version', { versionId })
 }
+
+// 表格行/单元格点击 → 触发 AI 交互
+function onTableRowClick(payload: { rowData: any[]; rowIndex: number; html?: string; title?: string }) {
+  // 如果有 HTML 内容，优先打开网页展示
+  if (payload.html) {
+    onOpenWebpage({ html: payload.html, title: payload.title })
+    return
+  }
+
+  // 提取行内容作为上下文，触发 AI 对话
+  const rowText = payload.rowData
+    .map((cell: any) => {
+      if (typeof cell === 'object' && cell !== null) return cell.label || cell.value || ''
+      return String(cell)
+    })
+    .filter(Boolean)
+    .join(' | ')
+
+  if (rowText) {
+    emit('ai-ask', {
+      question: `请详细解释：${rowText}`,
+      context: rowText,
+    })
+  }
+}
+
+// CompareBlock 行点击
+function onCompareRowClick(payload: { item: any; index: number; html?: string; title?: string }) {
+  if (payload.html) {
+    onOpenWebpage({ html: payload.html, title: payload.title })
+    return
+  }
+  const item = payload.item
+  const rowText = `${item.label || ''} | ${typeof item.left === 'object' ? (item.left.label || item.left.value || '') : item.left} | ${typeof item.right === 'object' ? (item.right.label || item.right.value || '') : item.right}`
+  if (rowText) {
+    emit('ai-ask', {
+      question: `请详细对比分析：${rowText}`,
+      context: rowText,
+    })
+  }
+}
 </script>
 
 <template>
@@ -127,12 +169,13 @@ function onVersion(versionId: string) {
           class="chart-block"
         />
 
-        <!-- compare: 对比表全宽 -->
+        <!-- compare: 对比表全宽 + 可点击交互 -->
         <component
           v-else-if="componentRegistry[c.type] && c.type === 'compare'"
           :is="componentRegistry[c.type]"
           :props="c.props"
           class="compare-block"
+          @item-click="onCompareRowClick"
         />
 
         <!-- timeline: 时间线全宽 -->
@@ -150,6 +193,15 @@ function onVersion(versionId: string) {
           :props="c.props"
           class="webpage-block"
           @open="onOpenWebpage"
+        />
+
+        <!-- table: 表格 + 可点击行交互 -->
+        <component
+          v-else-if="componentRegistry[c.type] && c.type === 'table'"
+          :is="componentRegistry[c.type]"
+          :props="c.props"
+          class="standard-card"
+          @row-click="onTableRowClick"
         />
 
         <!-- 其他普通组件：标准卡片包裹 -->

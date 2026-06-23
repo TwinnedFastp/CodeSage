@@ -29,7 +29,7 @@ function onRowClick(row: CellValue[], index: number) {
       title: (htmlCell as CellData)?.title || `详情 - ${index + 1}`
     })
   } else {
-    // 普通行点击也触发事件，父组件可以根据需要处理
+    // 普通行点击也触发事件，父组件可以根据需要处理（如触发 AI 交互）
     emit('row-click', { rowData: row, rowIndex: index })
   }
 }
@@ -52,9 +52,9 @@ function onRowClick(row: CellValue[], index: number) {
           <tr
             v-for="(row, ri) in (props.props.rows || [])"
             :key="ri"
-            class="table-row"
+            class="table-row interactive-row"
             :class="{ 'has-action': row.some((cell: CellValue) => typeof cell === 'object' && cell !== null && (cell as CellData)?.html) }"
-            @click="onRowClick(row, Number(ri))"
+            @click="onRowClick(row, ri)"
           >
             <td
               v-for="(cell, ci) in row"
@@ -94,6 +94,15 @@ function onRowClick(row: CellValue[], index: number) {
 
 .table-row:hover {
   background: #FAFAFA;
+}
+
+/* 所有行可点击 */
+.table-row.interactive-row {
+  cursor: pointer;
+}
+
+.table-row.interactive-row:hover {
+  background: #F0F7FF;
 }
 
 /* 可点击的行 */

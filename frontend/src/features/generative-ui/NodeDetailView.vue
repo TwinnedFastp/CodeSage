@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, RefreshRight, FullScreen, Close } from '@element-plus/icons-vue'
@@ -138,10 +138,41 @@ function handleInlineOpen(payload: { title: string; html: string }) {
   activeWebpage.value = payload
 }
 
+// 处理表格/对比表点击 → 触发 AI 展开交互
+async function handleAiAsk(payload: { question: string; context: string }) {
+  if (!nodeId.value) return
+
+  // 显示提示
+  ElMessage.info(`正在分析：${payload.context.slice(0, 30)}...`)
+
+  try {
+    // 调用 expand 接口，让 AI 基于点击内容生成新的子节点/版本
+    await genApi.expandNode(nodeId.value, payload.question)
+    ElMessage.success('AI 已生成详细分析，正在加载...')
+    await loadNode()
+    // 自动滚动到内容区
+    activeWebpage.value = null
+  } catch (err: any) {
+    ElMessage.error(err.response?.data?.detail || 'AI 分析失败')
+  }
+}
+
 // 关闭内联网页
 function closeWebpage() {
   activeWebpage.value = null
 }
+
+// 当协议加载完成时，如果有 open_webpage action，自动展示专业网页
+watch(currentProtocol, (protocol) => {
+  if (!protocol) return
+  const webAction = protocol.actions?.find((a) => a.type === 'open_webpage' && a.params?.html_content)
+  if (webAction?.params?.html_content) {
+    activeWebpage.value = {
+      title: webAction.params.title || '详情页',
+      html: webAction.params.html_content,
+    }
+  }
+}, { immediate: true })
 
 // 再思考 - 生成新的专业网页
 async function onRegenerate() {
@@ -243,6 +274,7 @@ onMounted(() => {
                   :loading="regenerating"
                   @regenerate="onRegenerate"
                   @inline-open="handleInlineOpen"
+                  @ai-ask="handleAiAsk"
                 />
               </div>
             </div>
