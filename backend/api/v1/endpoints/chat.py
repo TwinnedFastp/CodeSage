@@ -261,22 +261,16 @@ async def _component_streaming_with_persistence(
     provider_config: dict, use_rag: bool, mode: str,
 ):
     """
-    生成式组件流式管道：
-    1. 用户消息落库（render_mode='component'，文本页面不显示）
-    2. 读取历史
-    3. RAG 检索（可选）
-    4. 调用 stream_component_protocol_raw 流式产出原始文本，
-       边产出边推给前端（前端实时显示"AI 正在生成…"的原始文本）
-    5. 流结束后解析完整 JSON 为 ComponentProtocol，落库 + 推 component 事件
-    6. 创建 UiNode 节点，推 node_id 事件
+    生成式组件 JSONL 流式管道：
+    1. 用户消息落库
+    2. 读取历史 / RAG 检索
+    3. 流式生成 JSONL：每收到完整的一行 JSON 就推 partial_component 给前端
+       → 前端逐步渲染，实现"边生成边显示"
+    4. 流结束后创建 UiNode 持久化 + 推最终 component 事件
     """
-    # 1. 用户消息落库（标记为 component 模式，文本页面不加载）
     await _persist_message(db, user_id, session_id, "user", user_message, render_mode="component")
-
-    # 2. 读取历史
     history = await _load_history_messages(db, user_id, session_id)
 
-    # 3. 知识检索
     knowledge = ""
     if use_rag:
         yield f"data: {json.dumps({'rag_status': 'searching'}, ensure_ascii=False)}\n\n"
@@ -289,54 +283,133 @@ async def _component_streaming_with_persistence(
         else:
             yield f"data: {json.dumps({'rag_status': 'done'}, ensure_ascii=False)}\n\n"
 
-    # 4. 流式生成组件协议原始文本
     from backend.services.component_service import stream_component_protocol_raw
-    from backend.schemas.component import component_protocol_from_text
     from backend.services import node_service
+    from backend.schemas.component import ALLOWED_COMPONENT_TYPES
 
-    raw_parts: list[str] = []
+    raw_buffer = ""
+    collected_components: list[dict] = []
+    page_meta: dict = {}
+    actions_list: list[dict] = []
+    streamed_count = 0
+
     try:
         async for piece in stream_component_protocol_raw(
             db, user_id, history, user_message, knowledge,
         ):
-            if piece:
-                raw_parts.append(piece)
-                # 推流式片段给前端，前端可显示"生成中…"的原始文本
-                yield f"data: {json.dumps({'streaming_raw': piece}, ensure_ascii=False)}\n\n"
+            if not piece:
+                continue
+            raw_buffer += piece
+            yield f"data: {json.dumps({'streaming_raw': piece}, ensure_ascii=False)}\n\n"
+
+            # 检测完整行（以 \n 分隔的 JSONL）
+            lines = raw_buffer.split("\n")
+            raw_buffer = lines.pop()  # 最后一段可能不完整，保留到下次
+
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+
+                # 结束标记
+                if obj.get("_meta_end"):
+                    continue
+
+                # 页面元信息行
+                if "page_type" in obj and "title" in obj and "type" not in obj:
+                    page_meta = obj
+                    # 推标题给前端
+                    yield f"data: {json.dumps({'partial_title': obj.get('title', ''), 'page_type': obj.get('page_type', '')}, ensure_ascii=False)}\n\n"
+                    continue
+
+                # 组件行：有 type 字段即视为组件
+                comp_type = obj.get("type")
+                if comp_type and comp_type in ALLOWED_COMPONENT_TYPES:
+                    collected_components.append(obj)
+                    streamed_count += 1
+                    yield f"data: {json.dumps({'partial_component': obj, 'index': streamed_count}, ensure_ascii=False)}\n\n"
+                    continue
+
+                # actions 行
+                if "actions" in obj:
+                    actions_list = obj.get("actions", [])
+
     except Exception as exc:
         logger.exception("流式生成组件协议失败 session_id=%s", session_id)
         yield f"data: {json.dumps({'error': f'组件生成失败：{exc}'}, ensure_ascii=False)}\n\n"
         yield "data: [DONE]\n\n"
         return
 
-    # 5. 解析完整 JSON 为 ComponentProtocol
-    raw_text = "".join(raw_parts)
-    try:
-        protocol = component_protocol_from_text(raw_text)
-    except ValueError as exc:
-        logger.error("组件协议 JSON 解析失败 session_id=%s raw=%s", session_id, raw_text[:200])
-        yield f"data: {json.dumps({'error': f'组件协议解析失败：{exc}'}, ensure_ascii=False)}\n\n"
+    # 流结束后：构建完整 ComponentProtocol 用于持久化和最终确认
+    if not collected_components:
+        yield f"data: {json.dumps({'error': '未能解析到有效组件'}, ensure_ascii=False)}\n\n"
         yield "data: [DONE]\n\n"
         return
 
-    # 6. 创建 UiNode 节点并落库
+    full_protocol = {
+        "page_type": page_meta.get("page_type", "analysis"),
+        "title": page_meta.get("title", ""),
+        "components": collected_components,
+        "actions": actions_list,
+        "meta": page_meta.get("meta", {}),
+    }
+
+    # 创建 UiNode
+    node_id = None
     try:
-        node, version, protocol = await node_service.create_root_from_chat(
-            db, user_id, UUID(session_id), history, user_message, knowledge,
+        from backend.models import UiNode, UiNodeVersion
+        import uuid as _uuid
+        node = UiNode(
+            id=_uuid.uuid4(),
+            user_id=user_id,
+            conversation_id=UUID(session_id),
+            node_type="root",
         )
+        db.add(node)
+        await db.flush()
+
+        # 查询最大版本号
+        from sqlalchemy import select, func as sqlfunc
+        r = await db.execute(
+            select(sqlfunc.coalesce(sqlfunc.max(UiNodeVersion.version_no), 0))
+            .where(UiNodeVersion.node_id == node.id)
+        )
+        next_version = r.scalar() + 1
+
+        version = UiNodeVersion(
+            id=_uuid.uuid4(),
+            node_id=node.id,
+            version_no=next_version,
+            content_json=full_protocol,
+            source="llm",
+        )
+        db.add(version)
+        node.current_version_id = version.id
+        await db.flush()
+        await db.commit()
+        node_id = str(node.id)
     except Exception as exc:
         logger.exception("创建组件节点失败 session_id=%s", session_id)
+        await db.rollback()
         yield f"data: {json.dumps({'error': f'节点创建失败：{exc}'}, ensure_ascii=False)}\n\n"
         yield "data: [DONE]\n\n"
         return
 
-    # assistant 消息落库（存完整组件 JSON，标记 component 模式）
-    component_json = protocol.model_dump(mode="json")
+    # 落库 assistant 消息
     await _persist_message(
         db, user_id, session_id, "assistant",
-        json.dumps(component_json, ensure_ascii=False),
+        json.dumps(full_protocol, ensure_ascii=False),
         render_mode="component",
     )
+
+    # 推最终确认事件
+    yield f"data: {json.dumps({'node_id': node_id, 'streaming_done': True}, ensure_ascii=False)}\n\n"
+    yield f"data: {json.dumps({'component': full_protocol, 'node_id': node_id}, ensure_ascii=False)}\n\n"
+    yield "data: [DONE]\n\n"
 
     # 推 node_id 和最终 component 给前端
     yield f"data: {json.dumps({'node_id': str(node.id)}, ensure_ascii=False)}\n\n"

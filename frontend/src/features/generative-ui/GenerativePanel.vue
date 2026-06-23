@@ -5,6 +5,12 @@ import { ChatDotRound, Promotion, User as UserIcon, Link } from '@element-plus/i
 import { useGenerativeUi } from './useGenerativeUi'
 import ComponentRenderer from './ComponentRenderer.vue'
 import ThinkingBlock from './components/ThinkingBlock.vue'
+import { componentRegistry } from './componentRegistry'
+
+// 轻量查找组件（用于增量渲染）
+function componentOf(type: string) {
+  return componentRegistry[type] || null
+}
 
 const props = defineProps<{
   sessionId: string | null
@@ -113,16 +119,35 @@ onMounted(() => {
             class="max-w-[85%] bg-[#F3F2EE] text-[#111111] px-5 py-3.5 rounded-2xl rounded-tr-sm text-[15px] leading-relaxed whitespace-pre-wrap"
           >{{ msg.content }}</div>
 
-          <!-- 助手消息：流式思考区 / 组件协议 / 加载占位 -->
+          <!-- 助手消息：流式思考区 / JSONL增量渲染 / 组件协议 / 加载占位 -->
           <div v-else class="max-w-[92%] w-full pt-1 space-y-3">
-            <!-- 流式思考阶段：显示 ThinkingBlock（有原始文本且未收到组件时） -->
+            <!-- 流式思考阶段：显示 ThinkingBlock（有原始文本时） -->
             <ThinkingBlock
-              v-if="msg.thinkingRaw && !msg.protocol"
+              v-if="msg.thinkingRaw"
               :raw-text="msg.thinkingRaw"
               :done="msg.thinkingDone"
             />
 
-            <!-- 正式组件渲染（收到 component 事件后） -->
+            <!-- JSONL 增量渲染：AI 每生成一个组件就立即显示（边生成边渲染） -->
+            <div v-if="msg.partialComponents?.length && !msg.protocol" class="rounded-2xl bg-white border border-[#111]/10 p-5 shadow-[0_2px_12px_rgb(0,0,0,0.03)]">
+              <h3 v-if="msg.partialTitle" class="font-serif text-xl text-[#111] leading-snug mb-4">{{ msg.partialTitle }}</h3>
+              <div class="space-y-4">
+                <template v-for="(c, i) in msg.partialComponents" :key="c.id || c.type + '_' + i">
+                  <component
+                    v-if="componentOf(c.type)"
+                    :is="componentOf(c.type)"
+                    :props="c.props"
+                  />
+                </template>
+              </div>
+              <!-- 生成中脉冲指示器 -->
+              <div v-if="!msg.thinkingDone" class="flex items-center gap-2 mt-4 pt-3 border-t border-[#E8E6E1]/60">
+                <span class="w-2 h-2 rounded-full bg-[#111] animate-pulse"></span>
+                <span class="text-[11px] text-[#999]">AI 正在持续生成更多内容…</span>
+              </div>
+            </div>
+
+            <!-- 正式组件渲染（收到最终 component 事件后） -->
             <ComponentRenderer
               v-if="msg.protocol"
               :protocol="msg.protocol"

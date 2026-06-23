@@ -2,7 +2,7 @@ import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import * as genApi from './api'
-import type { ComponentProtocol, FunctionMeta, NodeVersionSummary } from './types'
+import type { ComponentProtocol, FunctionMeta, NodeVersionSummary, Component } from './types'
 
 export interface GenerativeMessage {
   id: string
@@ -14,9 +14,12 @@ export interface GenerativeMessage {
   currentVersionNo?: number
   loading?: boolean
   error?: boolean
-  // 流式思考阶段：实时显示 AI 生成的原始文本
+  // 流式思考阶段
   thinkingRaw?: string
   thinkingDone?: boolean
+  // JSONL 增量渲染：逐步收集部分组件
+  partialComponents?: Component[]
+  partialTitle?: string
 }
 
 export function useGenerativeUi() {
@@ -55,7 +58,7 @@ export function useGenerativeUi() {
     const userMsgId = `u-${Date.now()}`
     const assistantId = `a-${Date.now()}`
     messages.value.push({ id: userMsgId, role: 'user', content: userText })
-    messages.value.push({ id: assistantId, role: 'assistant', content: '', loading: true, thinkingRaw: '', thinkingDone: false })
+    messages.value.push({ id: assistantId, role: 'assistant', content: '', loading: true, thinkingRaw: '', thinkingDone: false, partialComponents: [] })
     streaming.value = true
 
     let backendSessionId: string | null = sessionId || null
@@ -113,6 +116,21 @@ export function useGenerativeUi() {
             }
             if (parsed.session_id && !backendSessionId) {
               backendSessionId = parsed.session_id as string
+              continue
+            }
+            // JSONL 增量：标题行
+            if (parsed.partial_title) {
+              const m = findAssistant(assistantId)
+              if (m) m.partialTitle = parsed.partial_title
+              continue
+            }
+            // JSONL 增量：单个组件（边生成边渲染）
+            if (parsed.partial_component) {
+              const m = findAssistant(assistantId)
+              if (m) {
+                if (!m.partialComponents) m.partialComponents = []
+                m.partialComponents.push(parsed.partial_component as Component)
+              }
               continue
             }
             // 流式原始文本片段：AI 正在生成组件 JSON，写入思考区实时显示
