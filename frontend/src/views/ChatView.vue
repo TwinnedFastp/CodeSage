@@ -281,7 +281,7 @@ function onGenSessionCreated(id: string) {
     </el-drawer>
 
     <!-- 主聊天区域 -->
-    <main class="flex-1 flex flex-col relative min-w-0 bg-[#FAFAFA] overflow-hidden">
+    <main class="flex-1 flex flex-col relative min-w-0 bg-[#FAFAFA]">
       <header class="h-20 flex items-center px-6 justify-between absolute top-0 left-0 right-0 z-10 bg-gradient-to-b from-[#FAFAFA] to-transparent">
         <div class="flex items-center gap-4 min-w-0">
           <button v-if="isMobile" @click="drawerVisible = true" class="p-2 -ml-2 text-[#555555]"><el-icon :size="22"><Operation /></el-icon></button>
@@ -316,7 +316,7 @@ function onGenSessionCreated(id: string) {
       </header>
 
       <template v-if="renderMode === 'text'">
-      <div ref="chatContainer" class="flex-1 overflow-y-auto pt-24 pb-44 px-4 md:px-12 scroll-smooth custom-scrollbar">
+      <div ref="chatContainer" class="flex-1 min-h-0 overflow-y-auto pt-24 pb-44 px-4 md:px-12 scroll-smooth custom-scrollbar">
         <div class="max-w-3xl mx-auto space-y-10 pb-6">
           <div v-if="loadingMessages" class="text-center text-[13px] text-[#999999] py-8">加载消息中…</div>
           <div v-for="msg in messages" :key="msg.id" :class="['flex gap-5 animate-fade-in-up', msg.role === 'user' ? 'flex-row-reverse' : '']">

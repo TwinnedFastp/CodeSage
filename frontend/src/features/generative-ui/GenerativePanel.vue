@@ -86,7 +86,7 @@ onMounted(() => {
 
 <template>
   <div class="flex-1 flex flex-col relative min-w-0 bg-[#FAFAFA]">
-    <div ref="container" class="flex-1 overflow-y-auto pt-24 pb-56 px-4 md:px-12 scroll-smooth custom-scrollbar">
+    <div ref="container" class="flex-1 min-h-0 overflow-y-auto pt-24 pb-56 px-4 md:px-12 scroll-smooth custom-scrollbar">
       <div class="max-w-3xl mx-auto space-y-10 pb-6">
         <div v-if="messages.length === 0" class="text-center py-16">
           <div class="w-12 h-12 mx-auto mb-4 rounded-full bg-[#111111] text-[#FAFAFA] flex items-center justify-center">
