@@ -6,6 +6,7 @@ import ListBlock from './components/ListBlock.vue'
 import CodeBlock from './components/CodeBlock.vue'
 import QuoteBlock from './components/QuoteBlock.vue'
 import TableBlock from './components/TableBlock.vue'
+import WebPageBlock from './components/WebPageBlock.vue'
 import UnknownBlock from './components/UnknownBlock.vue'
 
 export const componentRegistry: Record<string, any> = {
@@ -16,6 +17,7 @@ export const componentRegistry: Record<string, any> = {
   code: CodeBlock,
   quote: QuoteBlock,
   table: TableBlock,
+  webpage: WebPageBlock,
 }
 
 export const ALLOWED_TYPES = Object.keys(componentRegistry)

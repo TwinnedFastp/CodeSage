@@ -1,12 +1,24 @@
 // 生成式 UI 模块的共享类型，严格对齐后端 ComponentProtocol 契约
 
-export type ComponentActionType = 'regenerate' | 'expand' | 'function_call'
+export type ComponentActionType = 'regenerate' | 'expand' | 'function_call' | 'open_webpage'
 
 export interface ComponentAction {
   type: ComponentActionType
   target_id?: string
   function_name?: string
   params?: Record<string, any>
+}
+
+/**
+ * open_webpage 动作的 params 结构：
+ * {
+ *   title: string         // 子页面标题
+ *   html_content: string  // 完整 HTML 文档内容（含 <style> 与 <script>）
+ * }
+ */
+export interface WebPageActionParams {
+  title?: string
+  html_content?: string
 }
 
 export interface Component {

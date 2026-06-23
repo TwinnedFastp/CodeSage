@@ -165,20 +165,20 @@ function onGenSessionCreated(id: string) {
         </button>
       </div>
 
-      <div class="px-5 mb-4 mt-2">
+      <div class="px-5 mb-3 mt-1">
         <!-- 顶部小图标目录：快速进入聊天 / 数据库 / 设置 -->
-        <div class="grid grid-cols-3 gap-2 p-2 rounded-2xl bg-white border border-[#E8E6E1] shadow-[0_4px_18px_rgb(0,0,0,0.04)]">
-          <button class="flex flex-col items-center justify-center gap-1 py-2.5 rounded-xl bg-[#111] text-white" title="当前聊天">
-            <el-icon :size="15"><ChatDotRound /></el-icon>
-            <span v-if="!isSidebarCollapse" class="text-[10px]">聊天</span>
+        <div class="grid grid-cols-3 gap-1.5 p-1.5 rounded-xl bg-white border border-[#E8E6E1] shadow-[0_2px_12px_rgb(0,0,0,0.03)]">
+          <button class="flex flex-col items-center justify-center gap-0.5 py-1.5 rounded-lg bg-[#111] text-white" title="当前聊天">
+            <el-icon :size="13"><ChatDotRound /></el-icon>
+            <span v-if="!isSidebarCollapse" class="text-[9px] leading-tight">聊天</span>
           </button>
-          <button @click="goToDatabaseAdmin" class="flex flex-col items-center justify-center gap-1 py-2.5 rounded-xl text-[#666] hover:bg-[#F3F2EE] hover:text-[#111] transition-colors" title="数据库管理">
-            <el-icon :size="15"><Coin /></el-icon>
-            <span v-if="!isSidebarCollapse" class="text-[10px]">数据库</span>
+          <button @click="goToDatabaseAdmin" class="flex flex-col items-center justify-center gap-0.5 py-1.5 rounded-lg text-[#666] hover:bg-[#F3F2EE] hover:text-[#111] transition-colors" title="数据库管理">
+            <el-icon :size="13"><Coin /></el-icon>
+            <span v-if="!isSidebarCollapse" class="text-[9px] leading-tight">数据库</span>
           </button>
-          <button @click="goToSettings" class="flex flex-col items-center justify-center gap-1 py-2.5 rounded-xl text-[#666] hover:bg-[#F3F2EE] hover:text-[#111] transition-colors" title="系统设置">
-            <el-icon :size="15"><Setting /></el-icon>
-            <span v-if="!isSidebarCollapse" class="text-[10px]">设置</span>
+          <button @click="goToSettings" class="flex flex-col items-center justify-center gap-0.5 py-1.5 rounded-lg text-[#666] hover:bg-[#F3F2EE] hover:text-[#111] transition-colors" title="系统设置">
+            <el-icon :size="13"><Setting /></el-icon>
+            <span v-if="!isSidebarCollapse" class="text-[9px] leading-tight">设置</span>
           </button>
         </div>
       </div>

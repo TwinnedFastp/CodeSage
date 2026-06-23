@@ -1,7 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { ElMessageBox } from 'element-plus'
-import { Refresh } from '@element-plus/icons-vue'
+import { computed, ref } from 'vue'
+import { Refresh, FullScreen, Close } from '@element-plus/icons-vue'
 import { componentRegistry } from './componentRegistry'
 import UnknownBlock from './components/UnknownBlock.vue'
 import type { ComponentAction, ComponentProtocol, NodeVersionSummary } from './types'
@@ -18,7 +17,13 @@ const emit = defineEmits<{
   (e: 'expand', payload: { id?: string; message: string }): void
   (e: 'function-call', payload: { function_name?: string; params?: Record<string, any>; target_id?: string }): void
   (e: 'switch-version', payload: { versionId: string }): void
+  (e: 'open-webpage', payload: { htmlContent: string; title: string }): void
 }>()
+
+// 全屏网页查看器状态
+const showWebpageViewer = ref(false)
+const webpageContent = ref('')
+const webpageTitle = ref('')
 
 const expandActions = computed<ComponentAction[]>(() =>
   (props.protocol.actions || []).filter((a) => a.type === 'expand'),
@@ -26,25 +31,18 @@ const expandActions = computed<ComponentAction[]>(() =>
 const fnActions = computed<ComponentAction[]>(() =>
   (props.protocol.actions || []).filter((a) => a.type === 'function_call'),
 )
+// webpage 类型动作（打开预生成的子页面）
+const webPageActions = computed<ComponentAction[]>(() =>
+  (props.protocol.actions || []).filter((a) => a.type === 'open_webpage'),
+)
 const versionsList = computed<NodeVersionSummary[]>(() => props.versions || [])
 
 function onRegenerate() {
   emit('regenerate')
 }
 
-async function onExpand(action: ComponentAction) {
-  try {
-    const res = await ElMessageBox.prompt('请输入展开指令', '展开节点', {
-      confirmButtonText: '展开',
-      cancelButtonText: '取消',
-      inputPlaceholder: '继续补充说明…',
-    })
-    const message = (res?.value || '').trim()
-    if (!message) return
-    emit('expand', { id: action?.target_id, message })
-  } catch {
-    // 用户取消
-  }
+function onExpand(action: ComponentAction) {
+  emit('expand', { id: action?.target_id, message: '请详细展开说明该主题的所有方面' })
 }
 
 function onFunctionCall(action: ComponentAction) {
@@ -53,6 +51,29 @@ function onFunctionCall(action: ComponentAction) {
     params: action?.params || {},
     target_id: action?.target_id,
   })
+}
+
+// 来自 webpage 组件卡片点击 或 open_webpage action 按钮
+function onOpenWebpage(payload: { html_content?: string; html?: string; title?: string }) {
+  const html = payload.html_content || payload.html || ''
+  const title = payload.title || '详情页'
+  if (!html) return
+  webpageContent.value = html
+  webpageTitle.value = title
+  showWebpageViewer.value = true
+  emit('open-webpage', { htmlContent: html, title })
+}
+
+// 来自 open_webpage action 按钮点击
+function onOpenWebpageAction(action: ComponentAction) {
+  const html = action.params?.html_content || ''
+  const title = action.params?.title || action.function_name || '详情页'
+  if (!html) return
+  onOpenWebpage({ html_content: html, title })
+}
+
+function closeWebpageViewer() {
+  showWebpageViewer.value = false
 }
 
 function onVersion(versionId: string) {
@@ -66,7 +87,19 @@ function onVersion(versionId: string) {
 
     <div class="space-y-4">
       <template v-for="(c, i) in protocol.components" :key="c.id || c.type + '_' + i">
-        <component v-if="componentRegistry[c.type]" :is="componentRegistry[c.type]" :props="c.props" />
+        <!-- webpage 类型组件：监听 open 事件 -->
+        <component
+          v-if="componentRegistry[c.type] && c.type === 'webpage'"
+          :is="componentRegistry[c.type]"
+          :props="c.props"
+          @open="onOpenWebpage"
+        />
+        <!-- 其他普通组件 -->
+        <component
+          v-else-if="componentRegistry[c.type]"
+          :is="componentRegistry[c.type]"
+          :props="c.props"
+        />
         <UnknownBlock v-else :props="c.props" :type="c.type" />
       </template>
     </div>
@@ -110,6 +143,63 @@ function onVersion(versionId: string) {
         plain
         @click="onFunctionCall(a)"
       >{{ a.function_name || '工具调用' }}</el-button>
+
+      <!-- open_webpage action 按钮：打开预生成的全屏 HTML 子页面 -->
+      <el-button
+        v-for="(a, i) in webPageActions"
+        :key="'wp' + i"
+        size="small"
+        round
+        type="primary"
+        plain
+        @click="onOpenWebpageAction(a)"
+      >
+        <el-icon class="mr-1"><FullScreen /></el-icon>
+        {{ a.params?.title || a.function_name || '查看详情' }}
+      </el-button>
     </div>
+
+    <!-- 全屏 HTML 网页查看器 -->
+    <Teleport to="body">
+      <transition name="webpage-fade">
+        <div
+          v-if="showWebpageViewer"
+          class="fixed inset-0 z-[9999] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4"
+          @click.self="closeWebpageViewer"
+        >
+          <div class="relative w-full h-full max-w-[1400px] bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+            <!-- 顶部栏 -->
+            <div class="shrink-0 flex items-center justify-between px-5 py-3 border-b border-[#E8E6E1] bg-white">
+              <div class="flex items-center gap-2 min-w-0">
+                <el-icon :size="16" class="text-[#111] shrink-0"><FullScreen /></el-icon>
+                <span class="font-serif text-[15px] text-[#111] truncate">{{ webpageTitle }}</span>
+              </div>
+              <el-button text circle size="small" @click="closeWebpageViewer" title="关闭">
+                <el-icon :size="18"><Close /></el-icon>
+              </el-button>
+            </div>
+            <!-- HTML 内容（iframe srcdoc 隔离） -->
+            <iframe
+              :srcdoc="webpageContent"
+              class="flex-1 w-full border-0 bg-white"
+              sandbox="allow-scripts allow-same-origin"
+              title="webpage-viewer"
+            />
+          </div>
+        </div>
+      </transition>
+    </Teleport>
   </div>
 </template>
+
+<style scoped>
+.webpage-fade-enter-active,
+.webpage-fade-leave-active {
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+.webpage-fade-enter-from,
+.webpage-fade-leave-to {
+  opacity: 0;
+  transform: scale(0.98);
+}
+</style>
