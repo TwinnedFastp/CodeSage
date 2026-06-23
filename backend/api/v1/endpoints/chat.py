@@ -30,6 +30,7 @@ from backend.rag.service import lightrag_service
 from backend.services import conversation_service, node_service
 from backend.services.provider_service import resolve_provider_config
 from backend.sys_prompts import CHAT_SYSTEM_PROMPT
+from backend.utils.document_extractor import extract_text_from_base64
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -40,12 +41,13 @@ MAX_HISTORY_MESSAGES = 20
 
 async def _persist_message(
     db: AsyncSession, user_id: int, session_id: str, role: str, content: str,
-    render_mode: str = "text",
+    render_mode: str = "text", attachments: list[dict] | None = None,
 ):
     """落库一条消息，失败不阻断主流程但记录日志。"""
     try:
         await conversation_service.add_message(
             db, user_id, session_id, role, content, render_mode=render_mode,
+            attachments=attachments,
         )
     except Exception:
         logger.exception("消息落库失败 user_id=%s session_id=%s role=%s", user_id, session_id, role)
@@ -69,8 +71,34 @@ async def _load_history_messages(db: AsyncSession, user_id: int, session_id: str
     history = []
     for m in msgs:
         role = "user" if m.role == "user" else "assistant"
-        history.append({"role": role, "content": m.content})
+        attachments = m.attachments if hasattr(m, "attachments") and m.attachments else None
+        if attachments and role == "user":
+            content = _build_multimodal_content(m.content, attachments)
+        else:
+            content = m.content
+        history.append({"role": role, "content": content})
     return history
+
+
+def _build_multimodal_content(text: str, attachments: list[dict]) -> list[dict] | str:
+    """
+    构建多模态消息内容（OpenAI Vision API 格式）。
+
+    如果只有文本无图片，返回字符串；否则返回 content 数组格式。
+    """
+    images = [a for a in attachments if a.get("type") == "image"]
+    if not images:
+        return text
+
+    content_parts = [{"type": "text", "text": text}]
+    for img in images:
+        image_url = img.get("data", "")
+        if image_url:
+            content_parts.append({
+                "type": "image_url",
+                "image_url": {"url": image_url}
+            })
+    return content_parts
 
 
 async def _query_knowledge(
@@ -121,6 +149,7 @@ async def ai_response_generator(
     provider_config: dict,
     knowledge: str = "",
     use_rag: bool = False,
+    attachments: list[dict] | None = None,
 ):
     """
     大模型流式回复生成器。
@@ -129,6 +158,7 @@ async def ai_response_generator(
     - provider_config: 用户的供应商配置（含 API Key / Base URL / 模型名）
     - knowledge: LightRAG 检索到的知识上下文（可空）
     - use_rag: 是否处于 RAG 模式
+    - attachments: 用户消息的附件（图片/文档）
     """
     api_key = provider_config.get("llm_api_key", "")
     base_url = provider_config.get("llm_base_url", "")
@@ -145,6 +175,15 @@ async def ai_response_generator(
 
     system_prompt = _build_system_prompt(knowledge, use_rag)
     messages = [{"role": "system", "content": system_prompt}] + history
+
+    if attachments:
+        images = [a for a in attachments if a.get("type") == "image"]
+        if images:
+            user_content = _build_multimodal_content(user_message, attachments)
+            for i in range(len(messages) - 1, -1, -1):
+                if messages[i]["role"] == "user":
+                    messages[i]["content"] = user_content
+                    break
 
     try:
         response = await client.chat.completions.create(
@@ -194,6 +233,7 @@ async def _maybe_auto_title(
 async def _streaming_with_persistence(
     user_message: str, session_id: str, user_id: int, db: AsyncSession,
     provider_config: dict, use_rag: bool, mode: str,
+    attachments: list[dict] | None = None,
 ):
     """
     流式生成 + 落库 + 保底标题：
@@ -205,7 +245,7 @@ async def _streaming_with_persistence(
     6. 保底触发标题生成
     """
     # 1. 用户消息落库
-    await _persist_message(db, user_id, session_id, "user", user_message)
+    await _persist_message(db, user_id, session_id, "user", user_message, attachments=attachments)
 
     # 2. 读取历史（已包含本轮 user 消息）
     history = await _load_history_messages(db, user_id, session_id)
@@ -228,7 +268,7 @@ async def _streaming_with_persistence(
 
     # 4 & 5. 流式生成 + 收集完整回复
     full_reply_parts: list[str] = []
-    async for chunk in ai_response_generator(history, user_message, provider_config, knowledge, use_rag):
+    async for chunk in ai_response_generator(history, user_message, provider_config, knowledge, use_rag, attachments):
         if chunk.startswith("data: ") and chunk.strip() != "data: [DONE]":
             data = chunk[6:].strip()
             try:
@@ -474,20 +514,24 @@ async def chat_streaming(
     """
     流式对话接口（需登录）
 
-    请求体：{ message, session_id?, use_rag?, mode? }
+    请求体：{ message, session_id?, use_rag?, mode?, images?, documents? }
     - 无 session_id 时自动创建会话
     - 自动读取历史消息让 AI 记住上下文
     - 供应商配置从 DB 动态读取（用户在设置页配置），无配置时兜底 .env
     - 默认集成 LightRAG 知识检索（可通过 use_rag=false 关闭）
     - 用户消息与 assistant 回复自动落库
+    - images: base64 编码的图片数组（支持多模态视觉理解）
+    - documents: {filename, content} 文档数组（自动提取文本作为上下文）
     """
     message = payload.get("message", "")
     use_rag = bool(payload.get("use_rag", False))
     mode = payload.get("mode", "hybrid")
     render_mode = payload.get("render_mode", "text")
     session_id = payload.get("session_id")
+    images = payload.get("images", [])
+    documents = payload.get("documents", [])
 
-    if not message:
+    if not message and not images and not documents:
         return JSONResponse(status_code=422, content={"message": "消息不能为空"})
 
     # 解析用户生效的供应商配置（唯一来源：数据库 ai_providers 表）
@@ -497,6 +541,33 @@ async def chat_streaming(
             status_code=400,
             content={"message": "未配置 AI 供应商，请在设置页面添加供应商配置。"},
         )
+
+    # 处理文档：提取文本内容并追加到消息
+    document_context = ""
+    if documents:
+        for doc in documents:
+            try:
+                text = extract_text_from_base64(doc["content"], doc["filename"])
+                document_context += f"\n\n--- 文档: {doc['filename']} ---\n{text}\n--- 文档结束 ---"
+            except Exception as exc:
+                logger.warning("文档提取失败 filename=%s error=%s", doc["filename"], exc)
+                document_context += f"\n\n[文档 {doc['filename']} 提取失败: {exc}]"
+
+    if document_context:
+        message = f"{message}\n\n{document_context}" if message else document_context.strip()
+
+    # 构建附件列表（用于存储和多模态消息构建）
+    attachments = []
+    for img in images:
+        attachments.append({
+            "type": "image",
+            "data": img,
+        })
+    for doc in documents:
+        attachments.append({
+            "type": "document",
+            "filename": doc["filename"],
+        })
 
     # 无会话则自动创建
     if not session_id:
@@ -518,6 +589,7 @@ async def chat_streaming(
             return
         async for chunk in _streaming_with_persistence(
             message, session_id, user.id, db, provider_config, use_rag, mode,
+            attachments=attachments if attachments else None,
         ):
             yield chunk
 

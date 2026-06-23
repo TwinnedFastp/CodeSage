@@ -22,3 +22,5 @@ cryptography
 aiosmtplib
 boto3
 python-multipart
+PyPDF2
+python-docx

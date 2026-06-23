@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.models.ui_node import UiNode, UiNodeVersion
 from backend.schemas.component import ComponentProtocol, validate_component_protocol
 from backend.services import component_service
+from backend.sys_prompts import REGENERATE_INSTRUCTION, EXPAND_INSTRUCTION
 
 logger = logging.getLogger(__name__)
 
@@ -251,9 +252,10 @@ async def regenerate_node(
         raise ValueError("节点不存在或无权访问")
     cur = await get_active_version(db, node.id)
     ctx = context_text or (json.dumps(cur.content_json, ensure_ascii=False) if cur else "")
-    instr = instruction or "请基于上下文重新生成该界面，输出完整组件协议 JSON。"
+    instr = instruction or REGENERATE_INSTRUCTION
     protocol = await component_service.generate_component_protocol(
         db, user_id, history_messages, instr, ctx
+        
     )
     v = await append_version(db, node, protocol.model_dump(mode="json"), source="regenerate")
     return node, v, protocol

@@ -61,6 +61,7 @@ class ChatMessage(Base):
     # 用于区分同一会话中不同页面的消息，文本页面加载历史时跳过 component 消息，
     # 生成式页面通过 UiNode 加载历史，互不干扰。
     render_mode = Column(String(16), nullable=False, default="text", server_default="text")
+    attachments = Column(JSONB, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), index=True)
 
     __table_args__ = (

@@ -18,6 +18,8 @@ const emit = defineEmits<{
   (e: 'function-call', payload: { function_name?: string; params?: Record<string, any>; target_id?: string }): void
   (e: 'switch-version', payload: { versionId: string }): void
   (e: 'open-webpage', payload: { htmlContent: string; title: string }): void
+  (e: 'inline-open', payload: { title: string; html: string }): void
+  (e: 'ai-ask', payload: { question: string; context: string }): void
 }>()
 
 // 全屏网页查看器状态
@@ -62,6 +64,8 @@ function onOpenWebpage(payload: { html_content?: string; html?: string; title?: 
   webpageTitle.value = title
   showWebpageViewer.value = true
   emit('open-webpage', { htmlContent: html, title })
+  // 同时触发内联打开事件，让父组件可以在页面内展示
+  emit('inline-open', { title, html })
 }
 
 // 来自 open_webpage action 按钮点击
@@ -88,27 +92,127 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 function onVersion(versionId: string) {
   emit('switch-version', { versionId })
 }
+
+// 表格行/单元格点击 → 触发 AI 交互
+function onTableRowClick(payload: { rowData: any[]; rowIndex: number; html?: string; title?: string }) {
+  // 如果有 HTML 内容，优先打开网页展示
+  if (payload.html) {
+    onOpenWebpage({ html: payload.html, title: payload.title })
+    return
+  }
+
+  // 提取行内容作为上下文，触发 AI 对话
+  const rowText = payload.rowData
+    .map((cell: any) => {
+      if (typeof cell === 'object' && cell !== null) return cell.label || cell.value || ''
+      return String(cell)
+    })
+    .filter(Boolean)
+    .join(' | ')
+
+  if (rowText) {
+    emit('ai-ask', {
+      question: `请详细解释：${rowText}`,
+      context: rowText,
+    })
+  }
+}
+
+// CompareBlock 行点击
+function onCompareRowClick(payload: { item: any; index: number; html?: string; title?: string }) {
+  if (payload.html) {
+    onOpenWebpage({ html: payload.html, title: payload.title })
+    return
+  }
+  const item = payload.item
+  const rowText = `${item.label || ''} | ${typeof item.left === 'object' ? (item.left.label || item.left.value || '') : item.left} | ${typeof item.right === 'object' ? (item.right.label || item.right.value || '') : item.right}`
+  if (rowText) {
+    emit('ai-ask', {
+      question: `请详细对比分析：${rowText}`,
+      context: rowText,
+    })
+  }
+}
 </script>
 
 <template>
-  <div class="rounded-2xl bg-white border border-[#E8E6E1] p-5 md:p-6 shadow-[0_2px_12px_rgb(0,0,0,0.03)]">
-    <h3 v-if="protocol.title" class="font-serif text-xl text-[#111111] leading-snug mb-4">{{ protocol.title }}</h3>
+  <div class="generative-renderer">
+    <!-- 标题区 -->
+    <div v-if="protocol.title" class="renderer-title-section">
+      <h3 class="font-serif text-2xl text-[#111111] leading-snug">{{ protocol.title }}</h3>
+    </div>
 
-    <div class="space-y-4">
+    <!-- 组件流式渲染 -->
+    <div class="renderer-components">
       <template v-for="(c, i) in protocol.components" :key="c.id || c.type + '_' + i">
+        <!-- hero_section: 全宽沉浸式渲染 -->
+        <component
+          v-if="componentRegistry[c.type] && c.type === 'hero_section'"
+          :is="componentRegistry[c.type]"
+          :props="c.props"
+          class="hero-full-width"
+        />
+
+        <!-- grid_layout: 网格容器特殊处理 -->
+        <component
+          v-else-if="componentRegistry[c.type] && c.type === 'grid_layout'"
+          :is="componentRegistry[c.type]"
+          :props="c.props"
+          class="grid-wrapper"
+        />
+
+        <!-- chart: 图表全宽展示 -->
+        <component
+          v-else-if="componentRegistry[c.type] && c.type === 'chart'"
+          :is="componentRegistry[c.type]"
+          :props="c.props"
+          class="chart-block"
+        />
+
+        <!-- compare: 对比表全宽 + 可点击交互 -->
+        <component
+          v-else-if="componentRegistry[c.type] && c.type === 'compare'"
+          :is="componentRegistry[c.type]"
+          :props="c.props"
+          class="compare-block"
+          @item-click="onCompareRowClick"
+        />
+
+        <!-- timeline: 时间线全宽 -->
+        <component
+          v-else-if="componentRegistry[c.type] && c.type === 'timeline'"
+          :is="componentRegistry[c.type]"
+          :props="c.props"
+          class="timeline-block"
+        />
+
         <!-- webpage 类型组件：监听 open 事件 -->
         <component
-          v-if="componentRegistry[c.type] && c.type === 'webpage'"
+          v-else-if="componentRegistry[c.type] && c.type === 'webpage'"
           :is="componentRegistry[c.type]"
           :props="c.props"
+          class="webpage-block"
           @open="onOpenWebpage"
         />
-        <!-- 其他普通组件 -->
+
+        <!-- table: 表格 + 可点击行交互 -->
         <component
-          v-else-if="componentRegistry[c.type]"
+          v-else-if="componentRegistry[c.type] && c.type === 'table'"
           :is="componentRegistry[c.type]"
           :props="c.props"
+          class="standard-card"
+          @row-click="onTableRowClick"
         />
+
+        <!-- 其他普通组件：标准卡片包裹 -->
+        <div v-else-if="componentRegistry[c.type]" class="standard-card">
+          <component
+            :is="componentRegistry[c.type]"
+            :props="c.props"
+          />
+        </div>
+
+        <!-- 未注册组件 -->
         <UnknownBlock v-else :props="c.props" :type="c.type" />
       </template>
     </div>
@@ -202,6 +306,95 @@ function onVersion(versionId: string) {
 </template>
 
 <style scoped>
+.generative-renderer {
+  display: flex;
+  flex-direction: column;
+}
+
+.renderer-title-section {
+  padding: 0 0 16px;
+  margin-bottom: 4px;
+}
+
+.renderer-title-section h3 {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 20px;
+  color: #111;
+  line-height: 1.35;
+  font-weight: 700;
+}
+
+.renderer-components {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* Hero 全宽沉浸式 */
+.hero-full-width {
+  margin: -4px -5px 0;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+/* Grid 布局容器 */
+.grid-wrapper {
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+/* 图表全宽展示 */
+.chart-block {
+  background: #FAFAFA;
+  border-radius: 12px;
+  padding: 18px;
+  border: 1px solid #F0EFE9;
+}
+.chart-block:hover {
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  transition: box-shadow 0.2s ease;
+}
+
+/* 对比表全宽 */
+.compare-block {
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+/* 时间线全宽 */
+.timeline-block {
+  background: #FAFAFA;
+  border-radius: 12px;
+  padding: 20px;
+  border: 1px solid #F0EFE9;
+}
+
+/* Webpage 入口卡片 */
+.webpage-block {
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+/* 标准卡片包裹（text_block / list / stat / tabs / accordion 等） */
+.standard-card {
+  background: white;
+  border-radius: 10px;
+  padding: 18px 20px;
+  border: 1px solid #F2F0EA;
+  transition: all 0.2s ease;
+}
+.standard-card:hover {
+  border-color: #E0DED8;
+  box-shadow: 0 1px 6px rgba(0,0,0,0.04);
+}
+
+/* 操作按钮区 */
+.mt-5.pt-4.border-t {
+  margin-top: 18px !important;
+  padding-top: 14px !important;
+  border-top-color: #F0EFE9 !important;
+}
+
 .webpage-fade-enter-active,
 .webpage-fade-leave-active {
   transition: opacity 0.25s ease, transform 0.25s ease;

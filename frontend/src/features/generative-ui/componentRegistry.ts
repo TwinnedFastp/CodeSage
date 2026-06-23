@@ -27,6 +27,13 @@ import TimelineBlock from './components/TimelineBlock.vue'
 import TabBlock from './components/TabBlock.vue'
 import AccordionBlock from './components/AccordionBlock.vue'
 import StatBlock from './components/StatBlock.vue'
+// 新增高级组件
+import FormBlock from './components/FormBlock.vue'
+import ButtonBlock from './components/ButtonBlock.vue'
+import GridLayout from './components/GridLayout.vue'
+import HeroSection from './components/HeroSection.vue'
+import BadgeBlock from './components/BadgeBlock.vue'
+import ProgressBlock from './components/ProgressBlock.vue'
 
 // ===== 异步组件（大体积 / 冷门，按需加载） =====
 // ChartBlock 引入 ECharts（~900KB），GalleryBlock 引入 el-image-viewer
@@ -51,6 +58,13 @@ export const componentRegistry: Record<string, VueComponent> = {
   compare: CompareBlock,
   timeline: TimelineBlock,
   stat: StatBlock,
+  // 新增高级组件（同步）
+  form: FormBlock,
+  button: ButtonBlock,
+  grid_layout: GridLayout,
+  hero_section: HeroSection,
+  badge: BadgeBlock,
+  progress: ProgressBlock,
   // 大体积组件（异步懒加载）
   chart: AsyncChartBlock,
   gallery: AsyncGalleryBlock,

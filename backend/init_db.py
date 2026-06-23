@@ -70,6 +70,8 @@ async def init_db() -> None:
         await conn.execute(text("ALTER TABLE users ALTER COLUMN username SET NOT NULL"))
         # chat_messages 加 render_mode 列：区分文本消息和生成式组件消息
         await conn.execute(text("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS render_mode VARCHAR(16) NOT NULL DEFAULT 'text'"))
+        # chat_messages 加 attachments 列：存储图片和文档附件（JSONB）
+        await conn.execute(text("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS attachments JSONB"))
         logger.info("表结构创建完成（已存在的表跳过）")
 
 

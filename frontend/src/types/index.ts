@@ -34,6 +34,7 @@ export interface ChatMessage {
   role: 'user' | 'assistant' | 'system'
   content: string
   render_mode?: 'text' | 'component'
+  attachments?: MessageAttachment[] | null
   created_at: string
 }
 
@@ -70,4 +71,27 @@ export interface DisplayMessage {
   role: 'user' | 'assistant'
   content: string
   pending?: boolean
+  /** 标记该消息来自生成式组件模式（用于显示特殊样式/提示） */
+  _isComponent?: boolean
+  /** 原始 JSON 内容（用于切换到组件模式时恢复） */
+  _rawContent?: string
+  /** 消息附件（图片/文档） */
+  attachments?: MessageAttachment[]
+}
+
+export interface MessageAttachment {
+  type: 'image' | 'document'
+  data?: string
+  filename?: string
+}
+
+export interface PendingImage {
+  id: string
+  dataUrl: string
+}
+
+export interface PendingDocument {
+  id: string
+  filename: string
+  content: string
 }

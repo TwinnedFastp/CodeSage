@@ -1,28 +1,157 @@
 <script setup lang="ts">
-defineProps<{ props: Record<string, any> }>()
+const props = defineProps<{
+  props: Record<string, any>
+}>()
+
+interface CellData {
+  html?: string
+  title?: string
+  label?: string
+  value?: string | number
+  [key: string]: any
+}
+
+type CellValue = string | number | CellData
+
+const emit = defineEmits<{
+  (e: 'row-click', payload: { rowData: CellValue[]; rowIndex: number; html?: string; title?: string }): void
+}>()
+
+function onRowClick(row: CellValue[], index: number) {
+  // 如果行数据包含 HTML 内容（用于内联展示），触发事件
+  const hasHtmlContent = row.some((cell: CellValue) => typeof cell === 'object' && cell !== null && (cell as CellData)?.html)
+  if (hasHtmlContent) {
+    const htmlCell = row.find((cell: CellValue) => typeof cell === 'object' && cell !== null && (cell as CellData)?.html)
+    emit('row-click', {
+      rowData: row,
+      rowIndex: index,
+      html: (htmlCell as CellData)?.html,
+      title: (htmlCell as CellData)?.title || `详情 - ${index + 1}`
+    })
+  } else {
+    // 普通行点击也触发事件，父组件可以根据需要处理（如触发 AI 交互）
+    emit('row-click', { rowData: row, rowIndex: index })
+  }
+}
 </script>
 
 <template>
-  <div class="overflow-x-auto rounded-xl border border-[#E8E6E1] custom-scrollbar">
-    <table class="w-full text-[13px] border-collapse">
-      <thead>
-        <tr class="bg-[#F3F2EE]">
-          <th
-            v-for="(h, i) in (props.headers || [])"
-            :key="i"
-            class="text-left px-3 py-2 font-serif font-medium text-[#111111] border-b border-[#E8E6E1]"
-          >{{ h }}</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="(row, ri) in (props.rows || [])" :key="ri" class="hover:bg-[#FAFAFA]">
-          <td
-            v-for="(cell, ci) in row"
-            :key="ci"
-            class="px-3 py-2 border-b border-[#E8E6E1] text-[#333333] whitespace-pre-wrap align-top"
-          >{{ cell }}</td>
-        </tr>
-      </tbody>
-    </table>
+  <div class="table-block-wrapper">
+    <div class="overflow-x-auto rounded-xl border border-[#E8E6E1] custom-scrollbar">
+      <table class="w-full text-[13px] border-collapse interactive-table">
+        <thead>
+          <tr class="bg-[#F3F2EE]">
+            <th
+              v-for="(h, i) in (props.props.headers || [])"
+              :key="i"
+              class="text-left px-4 py-2.5 font-serif font-medium text-[#111111] border-b border-[#E8E6E1]"
+            >{{ h }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr
+            v-for="(row, ri) in (props.props.rows || [])"
+            :key="ri"
+            class="table-row interactive-row"
+            :class="{ 'has-action': row.some((cell: CellValue) => typeof cell === 'object' && cell !== null && (cell as CellData)?.html) }"
+            @click="onRowClick(row, Number(ri))"
+          >
+            <td
+              v-for="(cell, ci) in row"
+              :key="ci"
+              class="px-4 py-2.5 border-b border-[#E8E6E1] text-[#333333] whitespace-pre-wrap align-top"
+              :class="{ 'clickable-cell': typeof cell === 'object' && cell !== null && (cell as CellData)?.html }"
+            >
+              <!-- 支持对象类型的单元格（带 HTML 和标题） -->
+              <template v-if="typeof cell === 'object' && cell !== null && (cell as CellData).html">
+                <span class="cell-with-action">
+                  {{ (cell as CellData).label || (cell as CellData).value || '' }}
+                  <el-icon class="action-icon"><FullScreen /></el-icon>
+                </span>
+              </template>
+              <template v-else>{{ cell }}</template>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
   </div>
 </template>
+
+<style scoped>
+.table-block-wrapper {
+  background: white;
+  border-radius: 12px;
+}
+
+.interactive-table {
+  cursor: default;
+}
+
+.table-row {
+  transition: all 0.15s ease;
+}
+
+.table-row:hover {
+  background: #FAFAFA;
+}
+
+/* 所有行可点击 */
+.table-row.interactive-row {
+  cursor: pointer;
+}
+
+.table-row.interactive-row:hover {
+  background: #F0F7FF;
+}
+
+/* 可点击的行 */
+.table-row.has-action {
+  cursor: pointer;
+}
+
+.table-row.has-action:hover {
+  background: #F0F7FF;
+  box-shadow: inset 0 0 0 2px #3B82F620;
+}
+
+/* 可点击的单元格 */
+.clickable-cell {
+  position: relative;
+}
+
+.cell-with-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #2563EB;
+  font-weight: 500;
+}
+
+.action-icon {
+  font-size: 12px;
+  opacity: 0.6;
+  transition: opacity 0.15s ease;
+}
+
+.cell-with-action:hover .action-icon {
+  opacity: 1;
+}
+
+/* 自定义滚动条 */
+.custom-scrollbar::-webkit-scrollbar {
+  height: 6px;
+  width: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: #F5F5F5;
+  border-radius: 3px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #D1D5DB;
+  border-radius: 3px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #9CA3AF;
+}
+</style>
