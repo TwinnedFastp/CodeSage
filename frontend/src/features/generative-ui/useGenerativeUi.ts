@@ -2,7 +2,7 @@ import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import * as genApi from './api'
-import type { ComponentProtocol, FunctionMeta, NodeVersionSummary } from './types'
+import type { ComponentProtocol, FunctionMeta, NodeVersionSummary, Component } from './types'
 
 export interface GenerativeMessage {
   id: string
@@ -14,6 +14,12 @@ export interface GenerativeMessage {
   currentVersionNo?: number
   loading?: boolean
   error?: boolean
+  // 流式思考阶段
+  thinkingRaw?: string
+  thinkingDone?: boolean
+  // JSONL 增量渲染：逐步收集部分组件
+  partialComponents?: Component[]
+  partialTitle?: string
 }
 
 export function useGenerativeUi() {
@@ -52,7 +58,7 @@ export function useGenerativeUi() {
     const userMsgId = `u-${Date.now()}`
     const assistantId = `a-${Date.now()}`
     messages.value.push({ id: userMsgId, role: 'user', content: userText })
-    messages.value.push({ id: assistantId, role: 'assistant', content: '', loading: true })
+    messages.value.push({ id: assistantId, role: 'assistant', content: '', loading: true, thinkingRaw: '', thinkingDone: false, partialComponents: [] })
     streaming.value = true
 
     let backendSessionId: string | null = sessionId || null
@@ -112,18 +118,33 @@ export function useGenerativeUi() {
               backendSessionId = parsed.session_id as string
               continue
             }
-            // 流式原始文本片段：AI 正在生成组件 JSON，实时显示
+            // JSONL 增量：标题行
+            if (parsed.partial_title) {
+              const m = findAssistant(assistantId)
+              if (m) m.partialTitle = parsed.partial_title
+              continue
+            }
+            // JSONL 增量：单个组件（边生成边渲染）
+            if (parsed.partial_component) {
+              const m = findAssistant(assistantId)
+              if (m) {
+                if (!m.partialComponents) m.partialComponents = []
+                m.partialComponents.push(parsed.partial_component as Component)
+              }
+              continue
+            }
+            // 流式原始文本片段：AI 正在生成组件 JSON，写入思考区实时显示
             if (parsed.streaming_raw) {
               const m = findAssistant(assistantId)
               if (m && !receivedComponent) {
-                m.content = (m.content || '') + parsed.streaming_raw
+                m.thinkingRaw = (m.thinkingRaw || '') + parsed.streaming_raw
               }
               continue
             }
             if (parsed.content) {
               const m = findAssistant(assistantId)
               if (m && !receivedComponent) {
-                m.content = (m.content || '') + parsed.content
+                m.thinkingRaw = (m.thinkingRaw || '') + parsed.content
               }
               continue
             }
@@ -140,6 +161,7 @@ export function useGenerativeUi() {
                 m.protocol = parsed.component as ComponentProtocol
                 m.content = ''
                 m.loading = false
+                m.thinkingDone = true
               }
               continue
             }
@@ -150,7 +172,10 @@ export function useGenerativeUi() {
       }
 
       const m = findAssistant(assistantId)
-      if (m) m.loading = false
+      if (m) {
+        m.loading = false
+        m.thinkingDone = true
+      }
       if (m?.nodeId) {
         await refreshVersionsFor(m.nodeId, assistantId)
       }
@@ -159,6 +184,7 @@ export function useGenerativeUi() {
       if (m) {
         m.loading = false
         m.error = true
+        m.thinkingDone = true
         m.content = `抱歉，生成式回复时发生错误：${err?.message || '未知错误'}`
       }
       console.error('streamComponentChat error', err)
@@ -313,8 +339,6 @@ export function useGenerativeUi() {
       if (convResp.ok) {
         const msgs = await convResp.json() as any[]
         const componentMsgs = msgs.filter((m: any) => m.render_mode === 'component')
-        // 暂存 assistant 消息（JSON），后面按节点顺序匹配
-        const assistantJsonMsgs = componentMsgs.filter((m: any) => m.role === 'assistant')
         const userMsgs = componentMsgs.filter((m: any) => m.role === 'user')
 
         // 2. 加载该会话的 UiNode 列表
@@ -336,6 +360,9 @@ export function useGenerativeUi() {
         }
         timeline.sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime())
 
+        // 记录已显示的 assistant node id
+        const nodeIdsShown = new Set<string>()
+
         for (const item of timeline) {
           if (item.type === 'user') {
             messages.value.push({
@@ -353,6 +380,30 @@ export function useGenerativeUi() {
                 nodeId: item.data.node.id,
                 loading: false,
               })
+              nodeIdsShown.add(item.data.node.id)
+            }
+          }
+        }
+
+        // 检测断线恢复：只有当会话有 component 消息但没有对应 UiNode 时，
+        // 才从 _streaming_partial 消息恢复（正常完成的流程已通过 UiNode 显示）
+        if (nodes.length === 0) {
+          const assistantMsgs = componentMsgs.filter((m: any) => m.role === 'assistant')
+          for (const am of assistantMsgs) {
+            if (!am.content || am.content.length < 10) continue
+            try {
+              const parsed = JSON.parse(am.content)
+              if (parsed._streaming_partial && parsed.components?.length) {
+                messages.value.push({
+                  id: `a-recover-${am.message_id || Date.now()}`,
+                  role: 'assistant',
+                  protocol: parsed as ComponentProtocol,
+                  loading: false,
+                })
+                break // 只恢复最后一条 partial
+              }
+            } catch {
+              // 非 JSON 内容，跳过
             }
           }
         }

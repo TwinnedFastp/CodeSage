@@ -4,6 +4,13 @@ import { useRouter } from 'vue-router'
 import { ChatDotRound, Promotion, User as UserIcon, Link } from '@element-plus/icons-vue'
 import { useGenerativeUi } from './useGenerativeUi'
 import ComponentRenderer from './ComponentRenderer.vue'
+import ThinkingBlock from './components/ThinkingBlock.vue'
+import { componentRegistry } from './componentRegistry'
+
+// 轻量查找组件（用于增量渲染）
+function componentOf(type: string) {
+  return componentRegistry[type] || null
+}
 
 const props = defineProps<{
   sessionId: string | null
@@ -85,8 +92,8 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="flex-1 flex flex-col relative min-w-0 bg-[#FAFAFA]">
-    <div ref="container" class="flex-1 overflow-y-auto pt-24 pb-44 px-4 md:px-12 scroll-smooth custom-scrollbar">
+  <div class="flex-1 flex flex-col relative min-w-0 min-h-0 overflow-hidden bg-[#FAFAFA]">
+    <div ref="container" class="flex-1 min-h-0 overflow-y-auto pt-24 pb-56 px-4 md:px-12 scroll-smooth custom-scrollbar">
       <div class="max-w-3xl mx-auto space-y-10 pb-6">
         <div v-if="messages.length === 0" class="text-center py-16">
           <div class="w-12 h-12 mx-auto mb-4 rounded-full bg-[#111111] text-[#FAFAFA] flex items-center justify-center">
@@ -112,8 +119,35 @@ onMounted(() => {
             class="max-w-[85%] bg-[#F3F2EE] text-[#111111] px-5 py-3.5 rounded-2xl rounded-tr-sm text-[15px] leading-relaxed whitespace-pre-wrap"
           >{{ msg.content }}</div>
 
-          <!-- 助手消息：组件协议 / 流式文本 / 加载占位 -->
-          <div v-else class="max-w-[92%] w-full pt-1">
+          <!-- 助手消息：流式思考区 / JSONL增量渲染 / 组件协议 / 加载占位 -->
+          <div v-else class="max-w-[92%] w-full pt-1 space-y-3">
+            <!-- 流式思考阶段：显示 ThinkingBlock（有原始文本时） -->
+            <ThinkingBlock
+              v-if="msg.thinkingRaw"
+              :raw-text="msg.thinkingRaw"
+              :done="msg.thinkingDone"
+            />
+
+            <!-- JSONL 增量渲染：AI 每生成一个组件就立即显示（边生成边渲染） -->
+            <div v-if="msg.partialComponents?.length && !msg.protocol" class="rounded-2xl bg-white border border-[#111]/10 p-5 shadow-[0_2px_12px_rgb(0,0,0,0.03)]">
+              <h3 v-if="msg.partialTitle" class="font-serif text-xl text-[#111] leading-snug mb-4">{{ msg.partialTitle }}</h3>
+              <div class="space-y-4">
+                <template v-for="(c, i) in msg.partialComponents" :key="c.id || c.type + '_' + i">
+                  <component
+                    v-if="componentOf(c.type)"
+                    :is="componentOf(c.type)"
+                    :props="c.props"
+                  />
+                </template>
+              </div>
+              <!-- 生成中脉冲指示器 -->
+              <div v-if="!msg.thinkingDone" class="flex items-center gap-2 mt-4 pt-3 border-t border-[#E8E6E1]/60">
+                <span class="w-2 h-2 rounded-full bg-[#111] animate-pulse"></span>
+                <span class="text-[11px] text-[#999]">AI 正在持续生成更多内容…</span>
+              </div>
+            </div>
+
+            <!-- 正式组件渲染（收到最终 component 事件后） -->
             <ComponentRenderer
               v-if="msg.protocol"
               :protocol="msg.protocol"
@@ -125,6 +159,14 @@ onMounted(() => {
               @function-call="(p) => p.function_name && callFunction(p.function_name, p.params || {}, p.target_id || msg.nodeId)"
               @switch-version="(p) => msg.nodeId && switchVersion(msg.nodeId, p.versionId)"
             />
+
+            <!-- 思考完成后仍展示折叠的思考区（用户可展开查看生成过程） -->
+            <ThinkingBlock
+              v-if="msg.protocol && msg.thinkingRaw"
+              :raw-text="msg.thinkingRaw"
+              :done="true"
+            />
+
             <div v-if="msg.nodeId" class="mt-2">
               <el-button
                 size="small"
@@ -136,7 +178,8 @@ onMounted(() => {
                 查看详情
               </el-button>
             </div>
-            <div v-else class="text-[15px] leading-relaxed text-[#111111] flex items-center gap-2">
+            <!-- 纯文本错误兜底（无思考文本时） -->
+            <div v-if="!msg.protocol && !msg.thinkingRaw && msg.content" class="text-[15px] leading-relaxed text-[#111111] flex items-center gap-2">
               <span
                 v-if="msg.loading"
                 class="inline-block w-2 h-4 bg-[#111111] animate-pulse-cursor align-middle"
@@ -150,7 +193,7 @@ onMounted(() => {
       </div>
     </div>
 
-    <footer class="absolute bottom-0 left-0 right-0 p-4 md:p-8 bg-gradient-to-t from-[#FAFAFA] via-[#FAFAFA] to-transparent pointer-events-none">
+    <footer class="absolute bottom-0 left-0 right-0 p-4 md:p-8 bg-gradient-to-t from-[#FAFAFA] via-[#FAFAFA] to-transparent pointer-events-none z-20">
       <div class="max-w-3xl mx-auto relative pointer-events-auto">
         <div class="bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-[#E8E6E1] p-2 pr-14 relative transition-all duration-300 focus-within:shadow-[0_8px_30px_rgb(0,0,0,0.08)] focus-within:border-[#D1CFCA]">
           <textarea

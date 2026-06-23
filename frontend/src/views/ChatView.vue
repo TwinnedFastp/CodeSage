@@ -84,7 +84,13 @@ function goToDatabaseAdmin() {
   router.push('/database-admin')
 }
 
-const maskedEmail = computed(() => auth.user?.username || auth.user?.email || '')
+// ---- 用户信息显示（左下角 + 移动端抽屉底部）----
+const displayUsername = computed(() => auth.user?.username || auth.user?.email || 'CodeSage 用户')
+const displayAvatarUrl = computed(() => {
+  const url = auth.user?.avatar_url
+  // 加时间戳破浏览器缓存，确保头像更新后立即刷新
+  return url ? (url.includes('?') ? `${url}&_t=${Date.now()}` : `${url}?_t=${Date.now()}`) : ''
+})
 
 // ---- 包装函数：供模板调用 ----
 async function newConversation() {
@@ -159,20 +165,20 @@ function onGenSessionCreated(id: string) {
         </button>
       </div>
 
-      <div class="px-5 mb-4 mt-2">
+      <div class="px-5 mb-3 mt-1">
         <!-- 顶部小图标目录：快速进入聊天 / 数据库 / 设置 -->
-        <div class="grid grid-cols-3 gap-2 p-2 rounded-2xl bg-white border border-[#E8E6E1] shadow-[0_4px_18px_rgb(0,0,0,0.04)]">
-          <button class="flex flex-col items-center justify-center gap-1 py-2.5 rounded-xl bg-[#111] text-white" title="当前聊天">
-            <el-icon :size="15"><ChatDotRound /></el-icon>
-            <span v-if="!isSidebarCollapse" class="text-[10px]">聊天</span>
+        <div class="grid grid-cols-3 gap-1.5 p-1.5 rounded-xl bg-white border border-[#E8E6E1] shadow-[0_2px_12px_rgb(0,0,0,0.03)]">
+          <button class="flex flex-col items-center justify-center gap-0.5 py-1.5 rounded-lg bg-[#111] text-white" title="当前聊天">
+            <el-icon :size="13"><ChatDotRound /></el-icon>
+            <span v-if="!isSidebarCollapse" class="text-[9px] leading-tight">聊天</span>
           </button>
-          <button @click="goToDatabaseAdmin" class="flex flex-col items-center justify-center gap-1 py-2.5 rounded-xl text-[#666] hover:bg-[#F3F2EE] hover:text-[#111] transition-colors" title="数据库管理">
-            <el-icon :size="15"><Coin /></el-icon>
-            <span v-if="!isSidebarCollapse" class="text-[10px]">数据库</span>
+          <button @click="goToDatabaseAdmin" class="flex flex-col items-center justify-center gap-0.5 py-1.5 rounded-lg text-[#666] hover:bg-[#F3F2EE] hover:text-[#111] transition-colors" title="数据库管理">
+            <el-icon :size="13"><Coin /></el-icon>
+            <span v-if="!isSidebarCollapse" class="text-[9px] leading-tight">数据库</span>
           </button>
-          <button @click="goToSettings" class="flex flex-col items-center justify-center gap-1 py-2.5 rounded-xl text-[#666] hover:bg-[#F3F2EE] hover:text-[#111] transition-colors" title="系统设置">
-            <el-icon :size="15"><Setting /></el-icon>
-            <span v-if="!isSidebarCollapse" class="text-[10px]">设置</span>
+          <button @click="goToSettings" class="flex flex-col items-center justify-center gap-0.5 py-1.5 rounded-lg text-[#666] hover:bg-[#F3F2EE] hover:text-[#111] transition-colors" title="系统设置">
+            <el-icon :size="13"><Setting /></el-icon>
+            <span v-if="!isSidebarCollapse" class="text-[9px] leading-tight">设置</span>
           </button>
         </div>
       </div>
@@ -207,12 +213,16 @@ function onGenSessionCreated(id: string) {
 
       <div class="p-5 border-t border-[#E8E6E1]/50 relative">
         <div class="flex items-center gap-3 cursor-pointer group" @click="userMenuVisible = !userMenuVisible">
-          <div class="w-9 h-9 rounded-full bg-[#E8E6E1] overflow-hidden flex items-center justify-center text-[#555555] group-hover:bg-[#111111] group-hover:text-white transition-colors">
-            <img v-if="auth.user?.avatar_url" :src="auth.user.avatar_url" class="w-full h-full object-cover" alt="用户头像" />
-            <el-icon v-else><UserIcon /></el-icon>
-          </div>
+          <el-avatar
+            :size="36"
+            :src="displayAvatarUrl"
+            class="shrink-0 transition-transform duration-300 group-hover:scale-105"
+            :style="{ backgroundColor: displayAvatarUrl ? 'transparent' : '#E8E6E1', color: '#555', fontSize: '14px', fontWeight: 600 }"
+          >
+            {{ displayUsername.slice(0, 1).toUpperCase() }}
+          </el-avatar>
           <div v-if="!isSidebarCollapse" class="flex flex-col flex-1 min-w-0">
-            <span class="text-[13px] font-semibold truncate">{{ maskedEmail }}</span>
+            <span class="text-[13px] font-semibold truncate">{{ displayUsername }}</span>
             <span class="text-[11px] text-[#777777]">{{ auth.user?.email_verified ? '已验证' : '未验证' }}</span>
           </div>
         </div>
@@ -264,14 +274,14 @@ function onGenSessionCreated(id: string) {
             <el-icon :size="16"><Coin /></el-icon><span>数据库管理</span>
           </button>
           <button class="w-full flex items-center gap-3 px-2 py-2 text-[13px] text-[#444444] hover:text-[#111111]" @click="onLogout">
-            <el-icon :size="16"><SwitchButton /></el-icon><span>退出登录 ({{ maskedEmail }})</span>
+            <el-icon :size="16"><SwitchButton /></el-icon><span>退出登录 ({{ displayUsername }})</span>
           </button>
         </div>
       </div>
     </el-drawer>
 
     <!-- 主聊天区域 -->
-    <main class="flex-1 flex flex-col relative min-w-0 bg-[#FAFAFA]">
+    <main class="flex-1 flex flex-col relative min-w-0 min-h-0 overflow-hidden bg-[#FAFAFA]">
       <header class="h-20 flex items-center px-6 justify-between absolute top-0 left-0 right-0 z-10 bg-gradient-to-b from-[#FAFAFA] to-transparent">
         <div class="flex items-center gap-4 min-w-0">
           <button v-if="isMobile" @click="drawerVisible = true" class="p-2 -ml-2 text-[#555555]"><el-icon :size="22"><Operation /></el-icon></button>
@@ -306,7 +316,7 @@ function onGenSessionCreated(id: string) {
       </header>
 
       <template v-if="renderMode === 'text'">
-      <div ref="chatContainer" class="flex-1 overflow-y-auto pt-24 pb-44 px-4 md:px-12 scroll-smooth custom-scrollbar">
+      <div ref="chatContainer" class="flex-1 min-h-0 overflow-y-auto pt-24 pb-44 px-4 md:px-12 scroll-smooth custom-scrollbar">
         <div class="max-w-3xl mx-auto space-y-10 pb-6">
           <div v-if="loadingMessages" class="text-center text-[13px] text-[#999999] py-8">加载消息中…</div>
           <div v-for="msg in messages" :key="msg.id" :class="['flex gap-5 animate-fade-in-up', msg.role === 'user' ? 'flex-row-reverse' : '']">

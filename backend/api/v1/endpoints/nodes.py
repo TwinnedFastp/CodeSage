@@ -12,6 +12,37 @@ from backend.services import node_service
 router = APIRouter()
 
 
+def _map_gen_error(exc: Exception) -> HTTPException:
+    """将组件生成过程中的异常映射为用户友好的 HTTP 错误。"""
+    # openai 不一定已导入，这里延迟导入
+    try:
+        from openai import APIConnectionError, APIStatusError, AuthenticationError
+    except ImportError:
+        APIConnectionError = APIStatusError = AuthenticationError = None
+
+    if APIConnectionError and isinstance(exc, APIConnectionError):
+        return HTTPException(
+            status_code=502,
+            detail="AI 服务网络连接失败，请检查网络或稍后重试。可能是临时网络抖动或 base_url 不可达。",
+        )
+    if AuthenticationError and isinstance(exc, AuthenticationError):
+        return HTTPException(
+            status_code=401,
+            detail="AI 供应商 API Key 无效，请在设置页重新配置。",
+        )
+    if APIStatusError and isinstance(exc, APIStatusError):
+        # 模型名错误、参数错误等会走这里
+        return HTTPException(
+            status_code=502,
+            detail=f"AI 服务返回错误（{exc.status_code}）：{exc.message or str(exc)}。请检查模型名是否正确。",
+        )
+    if isinstance(exc, RuntimeError):
+        return HTTPException(status_code=400, detail=str(exc))
+    if isinstance(exc, ValueError):
+        return HTTPException(status_code=404, detail=str(exc))
+    return HTTPException(status_code=500, detail=f"组件生成失败：{exc}")
+
+
 async def _load_node_history(db: AsyncSession, user_id: int, node_detail: dict | None) -> list[dict]:
     conversation_id = None
     if node_detail:
@@ -77,8 +108,8 @@ async def expand_node(
         node, version, protocol = await node_service.expand_node(
             db, user.id, node_uuid, history, payload.message
         )
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        raise _map_gen_error(exc)
 
     return NodeActionOut(
         node_id=str(node.id),
@@ -108,8 +139,8 @@ async def regenerate_node(
         node, version, protocol = await node_service.regenerate_node(
             db, user.id, node_uuid, history, instruction=payload.message
         )
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        raise _map_gen_error(exc)
 
     return NodeActionOut(
         node_id=str(node.id),

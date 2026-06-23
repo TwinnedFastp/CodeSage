@@ -22,9 +22,38 @@ from backend.models import Base, User, LoginLog, ChatSession, ChatMessage, UserP
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("init_db")
 
+# 数据库连接重试配置（PG crash recovery 可能需要 10-30 秒）
+_DB_CONNECT_MAX_RETRIES = 30
+_DB_CONNECT_RETRY_INTERVAL = 2  # 秒
+
+
+async def _wait_for_database() -> None:
+    """等待数据库就绪，支持 PG crash recovery 场景。
+
+    PostgreSQL 被非正常关闭后重启会做 crash recovery（通常 10-30 秒），
+    此期间 asyncpg 会抛出 CannotConnectNowError。本函数会持续重试直到连接成功。
+    """
+    for attempt in range(1, _DB_CONNECT_MAX_RETRIES + 1):
+        try:
+            async with engine.begin() as conn:
+                await conn.execute(text("SELECT 1"))
+            logger.info("数据库连接成功")
+            return
+        except Exception as e:
+            if attempt < _DB_CONNECT_MAX_RETRIES:
+                logger.warning(
+                    "数据库未就绪（第 %d/%d 次，%s），%.0f 秒后重试…",
+                    attempt, _DB_CONNECT_MAX_RETRIES,
+                    type(e).__name__, _DB_CONNECT_RETRY_INTERVAL,
+                )
+                await asyncio.sleep(_DB_CONNECT_RETRY_INTERVAL)
+            else:
+                raise
+
 
 async def init_db() -> None:
     """创建所有表与索引。"""
+    await _wait_for_database()
     async with engine.begin() as conn:
         # gen_random_uuid() 依赖 pgcrypto 扩展（PG13+ 内置 pgcrypto 不再必需，
         # 但显式启用保证兼容性）

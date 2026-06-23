@@ -20,16 +20,25 @@ ALLOWED_COMPONENT_TYPES = {
     "code",
     "quote",
     "table",
+    "webpage",
+    "chart",
+    "timeline",
+    "tabs",
+    "accordion",
+    "stat",
+    "steps",
+    "compare",
+    "gallery",
 }
 
 # 允许的 action 类型
-ALLOWED_ACTION_TYPES = {"regenerate", "expand", "function_call"}
+ALLOWED_ACTION_TYPES = {"regenerate", "expand", "function_call", "open_webpage"}
 
 
 class ComponentAction(BaseModel):
     """组件交互行为。"""
 
-    type: Literal["regenerate", "expand", "function_call"]
+    type: Literal["regenerate", "expand", "function_call", "open_webpage"]
     target_id: Optional[str] = None
     function_name: Optional[str] = None
     params: Optional[dict[str, Any]] = None
