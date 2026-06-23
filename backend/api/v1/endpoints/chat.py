@@ -355,8 +355,8 @@ async def _component_streaming_with_persistence(
 
                 if "actions" in obj:
                     actions_list = obj.get("actions", [])
-                    # actions 行到来时落库部分结果（断线恢复的关键数据）
-                    if collected_components:
+                    # 断线时才写 partial 结果（正常流程等全部完成再落库，避免重复）
+                    if client_disconnected and collected_components:
                         partial_protocol = {
                             "page_type": page_meta.get("page_type", "analysis"),
                             "title": page_meta.get("title", ""),
@@ -372,7 +372,7 @@ async def _component_streaming_with_persistence(
                                 render_mode="component",
                             )
                         except Exception:
-                            logger.warning("部分结果落库失败 session_id=%s", session_id)
+                            logger.warning("断线 partial 落库失败 session_id=%s", session_id)
 
     except Exception as exc:
         logger.exception("流式生成组件协议失败 session_id=%s", session_id)

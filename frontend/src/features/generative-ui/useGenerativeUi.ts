@@ -385,28 +385,26 @@ export function useGenerativeUi() {
           }
         }
 
-        // 检测断线恢复：最后一条 assistant 消息在 chat_messages 中有 content
-        // 但对应 node 还未创建（流式过程中用户离开了）
-        const assistantMsgs = componentMsgs.filter((m: any) => m.role === 'assistant')
-        for (const am of assistantMsgs) {
-          if (!am.content || am.content.length < 10) continue
-          try {
-            const parsed = JSON.parse(am.content)
-            if (parsed._streaming_partial && parsed.components?.length) {
-              // 这是断线时保存的部分结果，直接恢复
-              const existingNode = nodes.find((n: any) =>
-                JSON.stringify(n.node.current_version?.content_json?.components) === JSON.stringify(parsed.components))
-              if (!existingNode) {
+        // 检测断线恢复：只有当会话有 component 消息但没有对应 UiNode 时，
+        // 才从 _streaming_partial 消息恢复（正常完成的流程已通过 UiNode 显示）
+        if (nodes.length === 0) {
+          const assistantMsgs = componentMsgs.filter((m: any) => m.role === 'assistant')
+          for (const am of assistantMsgs) {
+            if (!am.content || am.content.length < 10) continue
+            try {
+              const parsed = JSON.parse(am.content)
+              if (parsed._streaming_partial && parsed.components?.length) {
                 messages.value.push({
-                  id: `a-recover-${Date.now()}`,
+                  id: `a-recover-${am.message_id || Date.now()}`,
                   role: 'assistant',
                   protocol: parsed as ComponentProtocol,
                   loading: false,
                 })
+                break // 只恢复最后一条 partial
               }
+            } catch {
+              // 非 JSON 内容，跳过
             }
-          } catch {
-            // 非 JSON 内容，跳过
           }
         }
       }
