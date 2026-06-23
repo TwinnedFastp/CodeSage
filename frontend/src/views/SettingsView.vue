@@ -125,6 +125,7 @@ async function onLogout() {
 
 const profileForm = ref({ username: auth.user?.username || '' })
 const avatarUploading = ref(false)
+const avatarInput = ref<HTMLInputElement | null>(null)
 const maskedEmail = computed(() => {
   const e = auth.user?.email || ''
   if (!e) return ''
@@ -212,11 +213,15 @@ function onAvatarInput(event: Event) {
 
       <div class="p-5 border-t border-[#E8E6E1]/50">
         <div class="flex items-center gap-3 mb-3">
-          <div class="w-9 h-9 rounded-full bg-[#E8E6E1] flex items-center justify-center text-[#555]">
-            <el-icon><UserIcon /></el-icon>
-          </div>
+          <el-avatar
+            :size="36"
+            :src="auth.user?.avatar_url"
+            :style="{ backgroundColor: auth.user?.avatar_url ? 'transparent' : '#E8E6E1', color: '#555', fontSize: '14px', fontWeight: 600 }"
+          >
+            {{ displayName.slice(0, 1).toUpperCase() }}
+          </el-avatar>
           <div class="flex flex-col min-w-0">
-            <span class="text-[13px] font-semibold truncate">{{ maskedEmail }}</span>
+            <span class="text-[13px] font-semibold truncate">{{ displayName }}</span>
             <span class="text-[11px] text-[#777]">{{ auth.user?.email_verified ? '已验证' : '未验证' }}</span>
           </div>
         </div>
@@ -295,18 +300,36 @@ function onAvatarInput(event: Event) {
 
             <div class="bg-white rounded-2xl border border-[#E8E6E1] p-6">
               <div class="flex flex-col sm:flex-row sm:items-center gap-5 mb-6">
-                <div class="relative w-20 h-20 rounded-full overflow-hidden bg-[#111] text-white flex items-center justify-center text-2xl font-serif shrink-0">
-                  <img v-if="auth.user?.avatar_url" :src="auth.user.avatar_url" class="w-full h-full object-cover" alt="用户头像" />
-                  <span v-else>{{ avatarInitial }}</span>
+                <div class="relative group cursor-pointer" @click="avatarInput?.click()">
+                  <el-avatar
+                    :size="80"
+                    :src="auth.user?.avatar_url"
+                    class="!rounded-2xl shadow-md ring-2 ring-[#E8E6E1] transition-all duration-300 group-hover:ring-[#111] group-hover:shadow-lg shrink-0"
+                    :style="{ backgroundColor: auth.user?.avatar_url ? 'transparent' : '#111', color: 'white', fontSize: '28px', fontWeight: 600 }"
+                  >
+                    {{ avatarInitial }}
+                  </el-avatar>
+                  <!-- hover 遮罩 -->
+                  <div class="absolute inset-0 !rounded-2xl bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center">
+                    <span v-if="avatarUploading" class="text-white text-xs">上传中…</span>
+                    <template v-else>
+                      <el-icon :size="20" class="text-white"><Plus /></el-icon>
+                      <span class="text-white text-xs ml-1 font-medium">更换</span>
+                    </template>
+                  </div>
+                  <!-- 上传中 loading -->
+                  <div v-if="avatarUploading" class="absolute inset-0 !rounded-2xl bg-white/60 flex items-center justify-center z-10">
+                    <el-icon :size="24" class="animate-spin text-[#111]"><Operation /></el-icon>
+                  </div>
+                  <input ref="avatarInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" class="hidden" :disabled="avatarUploading" @change="onAvatarInput" />
                 </div>
                 <div class="flex-1 min-w-0">
                   <p class="text-[16px] font-semibold truncate">{{ displayName }}</p>
                   <p class="text-[12px] text-[#999] mt-1 truncate">{{ auth.user?.email }}</p>
                   <div class="mt-3 flex flex-wrap items-center gap-2">
-                    <label class="inline-flex items-center justify-center px-4 py-2 rounded-full text-[12px] font-medium bg-[#111] text-white hover:bg-[#333] cursor-pointer transition-colors">
-                      <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" class="hidden" :disabled="avatarUploading" @change="onAvatarInput" />
-                      {{ avatarUploading ? '上传中…' : '更换头像' }}
-                    </label>
+                    <button class="px-4 py-2 rounded-full text-[12px] font-medium bg-[#111] text-white hover:bg-[#333] cursor-pointer transition-colors" @click="avatarInput?.click()">
+                      更换头像
+                    </button>
                     <button class="px-4 py-2 rounded-full text-[12px] font-medium bg-[#F3F2EE] text-[#666] hover:text-[#111] transition-colors" @click="saveProfile">保存用户名</button>
                   </div>
                 </div>
