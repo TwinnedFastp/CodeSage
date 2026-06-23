@@ -251,7 +251,7 @@ async def regenerate_node(
         raise ValueError("节点不存在或无权访问")
     cur = await get_active_version(db, node.id)
     ctx = context_text or (json.dumps(cur.content_json, ensure_ascii=False) if cur else "")
-    instr = instruction or "请基于上下文重新生成该界面，输出完整组件协议 JSON。"
+    instr = instruction or "请基于上下文重新生成该界面，使用 draw_beautiful_page 工具生成一个全新的专业网页，输出完整组件协议 JSON。"
     protocol = await component_service.generate_component_protocol(
         db, user_id, history_messages, instr, ctx
     )
