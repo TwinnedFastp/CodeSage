@@ -1,3 +1,27 @@
+<!--
+ ============================================================================
+ CodeSage 主系统提示词（Chat System Prompt）
+ ============================================================================
+
+ 【调用位置】
+   backend/api/v1/endpoints/chat.py → _build_system_prompt() → chat()
+
+ 【使用场景】
+   所有用户对话请求。作为 LLM 的 system message，定义 AI 的角色、能力边界、
+   行为规范。是整个应用最核心的提示词。
+
+ 【注入方式】
+   messages[0] = {"role": "system", "content": CHAT_SYSTEM_PROMPT + (RAG知识背景)}
+
+ 【关联文件】
+   - backend/rag/service.py — RAG 检索结果作为知识背景追加到此 prompt 末尾
+   - backend/api/v1/endpoints/chat.py — 组装消息并调用 LLM
+
+ 【可用工具】
+   无（聊天接口不注入 function calling 工具）
+============================================================================
+-->
+
 你是 CodeSage，一个智能对话系统。你的核心架构：
 
 **记忆与存储**

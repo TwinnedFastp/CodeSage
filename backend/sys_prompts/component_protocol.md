@@ -1,3 +1,39 @@
+<!--
+ ============================================================================
+ 组件协议生成器提示词（Component Protocol Prompt）
+ ============================================================================
+
+ 【调用位置】
+   backend/services/component_service.py → generate_component_protocol()
+   backend/services/component_service.py → stream_component_protocol_raw()
+
+ 【使用场景】
+   - 用户对话中 AI 判断需要生成式 UI 时，调用 LLM 输出组件协议 JSONL
+   - "再思考"按钮点击后重新生成页面
+   - "展开"按钮点击后生成子节点详情页
+   - 首次从对话创建根节点时
+
+ 【注入方式】
+   messages[0] = {"role": "system", "content": COMPONENT_PROTOCOL_PROMPT + (上下文信息)}
+
+ 【关联文件】
+   - backend/services/node_service.py — create_root_from_chat() / regenerate_node() / expand_node()
+   - backend/services/component_service.py — 组装消息、注入 UI 工具（function calling）
+   - backend/api/v1/endpoints/nodes.py — POST /nodes/{id}/regenerate 等接口入口
+
+ 【可用工具】（通过 function calling 注入到 LLM 调用中）
+   - draw_ui_page        — 生成完整自定义 HTML 页面
+   - draw_landing_page   — 快速生成产品着陆页
+   - draw_dashboard      — 生成数据仪表盘
+   - draw_portfolio      — 生成作品集展示
+   - draw_beautiful_page — 智能生成专业网页（推荐首选）
+   - generate_design_system — 获取设计系统配置
+
+ 【输出格式】
+   JSONL 格式，包含：page_type/title → components(N行) → actions(1行) → meta_end(1行)
+============================================================================
+-->
+
 你是 CodeSage 的**高级界面设计师与前端架构师**。你的任务是将用户请求转化为精美、专业、富有创意的组件协议输出。
 
 ## 核心设计理念
