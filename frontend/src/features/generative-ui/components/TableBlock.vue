@@ -3,20 +3,30 @@ const props = defineProps<{
   props: Record<string, any>
 }>()
 
+interface CellData {
+  html?: string
+  title?: string
+  label?: string
+  value?: string | number
+  [key: string]: any
+}
+
+type CellValue = string | number | CellData
+
 const emit = defineEmits<{
-  (e: 'row-click', payload: { rowData: any[]; rowIndex: number; html?: string; title?: string }): void
+  (e: 'row-click', payload: { rowData: CellValue[]; rowIndex: number; html?: string; title?: string }): void
 }>()
 
-function onRowClick(row: any[], index: number) {
+function onRowClick(row: CellValue[], index: number) {
   // 如果行数据包含 HTML 内容（用于内联展示），触发事件
-  const hasHtmlContent = row.some(cell => typeof cell === 'object' && cell?.html)
+  const hasHtmlContent = row.some((cell: CellValue) => typeof cell === 'object' && cell !== null && (cell as CellData)?.html)
   if (hasHtmlContent) {
-    const htmlCell = row.find(cell => typeof cell === 'object' && cell?.html)
+    const htmlCell = row.find((cell: CellValue) => typeof cell === 'object' && cell !== null && (cell as CellData)?.html)
     emit('row-click', {
       rowData: row,
       rowIndex: index,
-      html: htmlCell?.html,
-      title: htmlCell?.title || `详情 - ${index + 1}`
+      html: (htmlCell as CellData)?.html,
+      title: (htmlCell as CellData)?.title || `详情 - ${index + 1}`
     })
   } else {
     // 普通行点击也触发事件，父组件可以根据需要处理
@@ -32,7 +42,7 @@ function onRowClick(row: any[], index: number) {
         <thead>
           <tr class="bg-[#F3F2EE]">
             <th
-              v-for="(h, i) in (props.headers || [])"
+              v-for="(h, i) in (props.props.headers || [])"
               :key="i"
               class="text-left px-4 py-2.5 font-serif font-medium text-[#111111] border-b border-[#E8E6E1]"
             >{{ h }}</th>
@@ -40,22 +50,22 @@ function onRowClick(row: any[], index: number) {
         </thead>
         <tbody>
           <tr
-            v-for="(row, ri) in (props.rows || [])"
+            v-for="(row, ri) in (props.props.rows || [])"
             :key="ri"
             class="table-row"
-            :class="{ 'has-action': row.some(cell => typeof cell === 'object' && cell?.html) }"
+            :class="{ 'has-action': row.some((cell: CellValue) => typeof cell === 'object' && cell !== null && (cell as CellData)?.html) }"
             @click="onRowClick(row, ri)"
           >
             <td
               v-for="(cell, ci) in row"
               :key="ci"
               class="px-4 py-2.5 border-b border-[#E8E6E1] text-[#333333] whitespace-pre-wrap align-top"
-              :class="{ 'clickable-cell': typeof cell === 'object' && cell?.html }"
+              :class="{ 'clickable-cell': typeof cell === 'object' && cell !== null && (cell as CellData)?.html }"
             >
               <!-- 支持对象类型的单元格（带 HTML 和标题） -->
-              <template v-if="typeof cell === 'object' && cell !== null && cell.html">
+              <template v-if="typeof cell === 'object' && cell !== null && (cell as CellData).html">
                 <span class="cell-with-action">
-                  {{ cell.label || cell.value || '' }}
+                  {{ (cell as CellData).label || (cell as CellData).value || '' }}
                   <el-icon class="action-icon"><FullScreen /></el-icon>
                 </span>
               </template>
