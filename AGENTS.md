@@ -450,6 +450,22 @@ export function someAction(payload: SomeIn): Promise<SomeOut> {
 3. 调 `POST /api/v1/auth/me/avatar/commit` 保存引用
 4. 前端展示用 `el-avatar` 组件，URL 加时间戳破缓存
 
+### 5.3 MinIO 对象存储
+
+项目使用 MinIO（S3 兼容）存储用户头像等文件资源：
+
+| 端口 | 用途 | 访问地址 |
+|------|------|----------|
+| 9000 | S3 API | `http://localhost:9000` |
+| 9001 | Web 控制台 | `http://localhost:9001` |
+
+**MinIO 控制台登录**：打开浏览器访问 `http://localhost:9001`，使用以下凭据：
+
+- 用户名: `codesage_minio`（默认，可修改 `MINIO_ROOT_USER` 环境变量）
+- 密码: `codesage_minio_change_me_32_chars`（默认，**生产环境必须修改** `MINIO_ROOT_PASSWORD`）
+
+头像上传流程：前端调用 `POST /api/v1/auth/me/avatar/upload` 获取 MinIO 预签名上传 URL → 浏览器直接 `PUT` 上传文件到 MinIO → 调用 `POST /api/v1/auth/me/avatar/commit` 保存引用。
+
 ---
 
 ## 六、Docker 开发工作流
