@@ -30,7 +30,13 @@ class RAGQueryIn(BaseModel):
     """
 
     question: str = Field(..., min_length=1, description="用户问题")
-    mode: Literal["naive", "local", "global", "hybrid"] = Field(
+    # 6 种模式对齐 backend/rag/service.py:361 的 LightRAG 原生支持
+    # - naive：普通向量检索
+    # - local / global：局部实体关系 / 全局图谱关系（依赖知识图谱）
+    # - hybrid：local + global 混合
+    # - mix：知识图谱 + 向量检索（最全面，最慢）
+    # - bypass：跳过检索直接调 LLM（调试用）
+    mode: Literal["naive", "local", "global", "hybrid", "mix", "bypass"] = Field(
         default="hybrid",
         description="LightRAG 查询模式，默认 hybrid",
     )

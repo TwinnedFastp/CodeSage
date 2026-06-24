@@ -10,7 +10,8 @@ export function useRag() {
   const ragReady = ref(false)
   const ragEnabled = ref(false)
   // 默认关闭：避免 RAG 环境故障连累普通对话，用户显式开启才走知识库检索
-  const ragMode = ref<'off' | 'naive' | 'local' | 'global' | 'hybrid'>('off')
+  // 6 种模式对齐 backend/rag/service.py:361 的 LightRAG 原生支持（含 mix 知识图谱+向量、bypass 跳过检索）
+  const ragMode = ref<'off' | 'naive' | 'local' | 'global' | 'hybrid' | 'mix'>('off')
   const documents = ref<RagDocument[]>([])
   const loadingDocs = ref(false)
   const uploading = ref(false)

@@ -43,7 +43,7 @@
 
 - **双模式对话**：文本对话 + 生成式页面（AI 回复动态渲染为组件）
 - **AI 预生成交互网页**：AI 一次性生成 1~3 个完整 HTML 子页面（含 CSS/JS），通过 `open_webpage` action 持久化，点击全屏打开
-- **5 种 RAG 检索模式**：naive / local / global / hybrid / mix
+- **6 种 RAG 检索模式**：naive / local / global / hybrid / mix / bypass（mix = 知识图谱+向量最全面；bypass = 跳过检索直接调 LLM，调试用）
 - **节点版本管理**：UiNode / UiNodeVersion，支持重生成、展开、版本切换
 
 ---
@@ -74,7 +74,7 @@ CodeSage/
 │   │
 │   ├── rag/                          # RAG 知识库模块（独立目录，不散落在 services/ 中）
 │   │   ├── __init__.py               # 导出 lightrag_service 单例
-│   │   ├── service.py                # LightRAG 封装: insert / query（5种模式）/ list / delete
+│   │   ├── service.py                # LightRAG 封装: insert / query（6种模式）/ list / delete
 │   │   ├── schemas.py                # RAG 请求/响应 Pydantic 模型
 │   │   ├── endpoints.py              # RAG REST API: status / documents / upload-file / query
 │   │   └── parser.py                 # 文件解析器: MD/TXT 文本清理
@@ -271,7 +271,7 @@ CodeSage/
 - **文件传输方式**: 前端 FileReader 读文本 → POST JSON 到 `/rag/upload-file`（不用 FormData/multipart）
 - **LightRAG 采用懒加载单例模式**: 首次调用 insert/query 时才初始化
 - **按用户隔离**: 每个用户独立工作空间（PG_WORKSPACE 前缀）
-- **5 种查询模式**: naive / local / global / hybrid / mix（mix = 知识图谱+向量，最慢）
+- **6 种查询模式**: naive / local / global / hybrid / mix / bypass（mix = 知识图谱+向量，最慢；bypass = 跳过检索直接调 LLM）
 - **查询超时**: mix/hybrid 图谱推理慢，超时 60s
 - **多轮对话**: `conversation_history` 传给 LightRAG 提升检索准确率
 

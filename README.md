@@ -94,7 +94,7 @@ CodeSage/
 │   │   ├── database_admin_service.py # 数据库管理
 │   │   └── provider_service.py    #   AI 供应商配置
 │   ├── rag/                       # LightRAG 集成
-│   │   ├── service.py             #   LightRAG 初始化/查询（5种模式）
+│   │   ├── service.py             #   LightRAG 初始化/查询（6种模式）
 │   │   ├── endpoints.py           #   知识库上传/文档管理
 │   │   └── parser.py              #   文件解析器
 │   ├── function_calling/          # 函数调用沙箱
