@@ -75,6 +75,8 @@ async def init_db() -> None:
         # chat_sessions 加归档字段
         await conn.execute(text("ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAULT FALSE"))
         await conn.execute(text("ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP WITH TIME ZONE"))
+        # chat_messages 加 reasoning 字段：持久化推理模型的思考过程
+        await conn.execute(text("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS reasoning TEXT"))
         logger.info("表结构创建完成（已存在的表跳过）")
 
 

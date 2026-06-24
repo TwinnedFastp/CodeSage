@@ -36,6 +36,7 @@ export interface ChatMessage {
   role: 'user' | 'assistant' | 'system'
   content: string
   render_mode?: 'text' | 'component'
+  reasoning?: string | null
   attachments?: MessageAttachment[] | null
   created_at: string
 }
@@ -73,6 +74,10 @@ export interface DisplayMessage {
   role: 'user' | 'assistant'
   content: string
   pending?: boolean
+  /** AI 推理模型的思考过程原始文本 */
+  thinkingRaw?: string
+  /** 思考过程是否已结束（用于折叠状态） */
+  thinkingDone?: boolean
   /** 标记该消息来自生成式组件模式（用于显示特殊样式/提示） */
   _isComponent?: boolean
   /** 原始 JSON 内容（用于切换到组件模式时恢复） */

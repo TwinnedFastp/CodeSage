@@ -211,13 +211,14 @@ def _extract_fallback_title(msgs: list[ChatMessage]) -> str:
 async def add_message(
     db: AsyncSession, user_id: int, session_id: UUID, role: str, content: str,
     render_mode: str = "text", attachments: list[dict] | None = None,
+    reasoning: str | None = None,
 ) -> ChatMessage:
     # 校验会话归属
     await get_session(db, user_id, session_id)
     msg = ChatMessage(
         user_id=user_id, session_id=session_id, role=role,
         content=content, render_mode=render_mode,
-        attachments=attachments,
+        attachments=attachments, reasoning=reasoning,
     )
     db.add(msg)
     try:

@@ -109,12 +109,13 @@ def _map_type_to_openai(type_str: str) -> str:
 
 
 def _build_messages(
-    history_messages: list[dict], instruction: str, context_text: str
+    history_messages: list[dict], instruction: str, context_text: str, user_nickname: str = ""
 ) -> list[dict]:
-    """组装 system + 历史 + 当前指令的消息序列。"""
-    system_prompt = COMPONENT_PROTOCOL_PROMPT + (
-        "\n\n【上下文信息】\n" + context_text if context_text else ""
-    )
+    """组装 system + 历史 + 当前指令的消息序列，并注入用户昵称。"""
+    nickname = user_nickname or "用户"
+    system_prompt = COMPONENT_PROTOCOL_PROMPT.format(user_nickname=nickname)
+    if context_text:
+        system_prompt += "\n\n【上下文信息】\n" + context_text
     return (
         [{"role": "system", "content": system_prompt}]
         + list(history_messages)

@@ -59,6 +59,8 @@ class ChatMessage(Base):
     user_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     role = Column(String(16), nullable=False)  # 'user' | 'assistant' | 'system'
     content = Column(Text, nullable=False)
+    # 推理模型的思考过程（可选），与 content 分开保存，前端默认折叠展示
+    reasoning = Column(Text, nullable=True)
     # 渲染模式：'text'（普通文本）| 'component'（生成式组件 JSON）。
     # 用于区分同一会话中不同页面的消息，文本页面加载历史时跳过 component 消息，
     # 生成式页面通过 UiNode 加载历史，互不干扰。

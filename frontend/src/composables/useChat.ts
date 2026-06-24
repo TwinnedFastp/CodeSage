@@ -19,6 +19,9 @@ const STREAMING_POLL_INTERVAL = 1500
 // 草稿节流间隔：500ms，避免高频写入 localStorage
 const DRAFT_SAVE_DEBOUNCE = 500
 const DRAFT_PREFIX = 'codesage_draft:'
+// ---- 智能滚动：用户向上翻阅时暂停自动跟随 ----
+const SCROLL_THRESHOLD = 120 // 距离底部多少 px 内视为"在底部"
+let _shouldAutoScroll = true // 是否应自动跟随新内容滚动
 
 export function useChat(
   currentSessionId: () => string | null,
@@ -168,11 +171,21 @@ async function _restoreActiveStreaming(sessionId: string) {
   )
 }
 
-  /**
-   * 轮询进行中的流式消息，实时更新内容。
-   * 当某条流式消失（后端已落库并清理 Redis），触发 loadMessages 刷新历史获取完整内容。
-   */
-  function _startStreamingPoll(sessionId: string) {
+// ---- 旧版轮询兼容层（已废弃，保留用于降级兜底）----
+let streamingPollTimer: ReturnType<typeof setTimeout> | null = null
+
+function _stopStreamingPoll() {
+  if (streamingPollTimer) {
+    clearTimeout(streamingPollTimer)
+    streamingPollTimer = null
+  }
+}
+
+/**
+ * 轮询进行中的流式消息（已废弃：优先使用 SSE 断点续传）。
+ * 当某条流式消失（后端已落库并清理 Redis），触发 loadMessages 刷新历史获取完整内容。
+ */
+function _startStreamingPoll(sessionId: string) {
     _stopStreamingPoll()
     streamingPollTimer = setTimeout(async () => {
       try {
@@ -260,12 +273,17 @@ async function _restoreActiveStreaming(sessionId: string) {
   onMounted(() => {
     window.addEventListener('beforeunload', _handleBeforeUnload)
     document.addEventListener('visibilitychange', _handleVisibilityChange)
+    // 监听用户手动滚动：向上翻时暂停自动跟随，滚回底部附近时恢复
+    chatContainer.value?.addEventListener('scroll', () => {
+      _shouldAutoScroll = _isNearBottom()
+    }, { passive: true })
   })
 
   onUnmounted(() => {
     window.removeEventListener('beforeunload', _handleBeforeUnload)
-    document.removeEventListener('visibilitychange', _handleVisibilityChange)
+    document.removeEventListener('visibilitychange', _handleVisibilityChange')
     _stopStreamingPoll()
+    _stopContinueStream()
     const sid = currentSessionId()
     if (sid) _saveDraft(sid)
   })
@@ -296,6 +314,10 @@ async function _restoreActiveStreaming(sessionId: string) {
         }
 
         const msg: DisplayMessage = { ...base, content: m.content }
+        if (m.reasoning) {
+          msg.thinkingRaw = m.reasoning
+          msg.thinkingDone = true
+        }
         if (m.attachments && m.attachments.length > 0) {
           msg.attachments = m.attachments
         }
@@ -306,7 +328,7 @@ async function _restoreActiveStreaming(sessionId: string) {
       await _restoreActiveStreaming(sessionId)
 
       if (messages.value.length === 0) messages.value = [{ ...WELCOME_MSG }]
-      await scrollToBottom()
+      await forceScrollToBottom() // 切换会话/加载历史 → 强制到底
 
       // 恢复上次未发送的输入草稿
       _loadDraft(sessionId)
@@ -319,6 +341,7 @@ async function _restoreActiveStreaming(sessionId: string) {
 
   function clearMessages() {
     _stopStreamingPoll()
+    _stopContinueStream()
     messages.value = []
   }
 
@@ -326,11 +349,30 @@ async function _restoreActiveStreaming(sessionId: string) {
     messages.value = [{ ...WELCOME_MSG, content: text || WELCOME_MSG.content }]
   }
 
-  async function scrollToBottom() {
+  /** 判断滚动容器是否在底部附近 */
+  function _isNearBottom(): boolean {
+    const el = chatContainer.value
+    if (!el) return true
+    return el.scrollHeight - el.scrollTop - el.clientHeight < SCROLL_THRESHOLD
+  }
+
+  /**
+   * 智能滚动：
+   * - force=true → 强制滚到底部（用户发消息、切换会话）
+   * - force=false → 仅在底部附近时才跟随新内容（用户往上翻时不受打扰）
+   */
+  async function scrollToBottom(force = false) {
     await nextTick()
-    if (chatContainer.value) {
+    if (!chatContainer.value) return
+    if (force || _shouldAutoScroll) {
       chatContainer.value.scrollTop = chatContainer.value.scrollHeight
     }
+  }
+
+  /** 强制滚到底 + 恢复自动跟随（用户主动操作后调用） */
+  async function forceScrollToBottom() {
+    _shouldAutoScroll = true
+    await scrollToBottom(true)
   }
 
   function adjustTextareaHeight(e: Event) {
@@ -370,22 +412,24 @@ async function _restoreActiveStreaming(sessionId: string) {
       attachments: attachments.length > 0 ? attachments : undefined,
     })
     userInput.value = ''
-    // 发送后清除草稿（已发出，无需恢复）
+    // 发送后清除草稿和旧的续传断点（已发出，无需恢复）
     _clearDraft(sessionId)
+    clearStreamResumePoint(sessionId)
     const textarea = document.querySelector('textarea')
     if (textarea) textarea.style.height = 'auto'
 
     pendingImages.value = []
     pendingDocuments.value = []
 
-    // 停止旧的恢复轮询，移除旧流式占位（避免与新流式混淆）
+    // 停止旧的恢复连接/轮询，移除旧流式占位（避免与新流式混淆）
+    _stopContinueStream()
     _stopStreamingPoll()
     _clearStreamingPlaceholders()
 
     const assistantId = `a-${Date.now()}`
     messages.value.push({ id: assistantId, role: 'assistant', content: '', pending: true })
     isTyping.value = true
-    await scrollToBottom()
+    await forceScrollToBottom() // 发消息后强制到底
 
     try {
       const token = auth.accessToken
@@ -468,13 +512,27 @@ async function _restoreActiveStreaming(sessionId: string) {
             }
             // 5. LLM 流式内容：累加到 assistant 气泡
             const t = messages.value.find(m => m.id === assistantId)
-            if (t && parsed.content) {
-              if (t.content === RAG_SEARCHING_PLACEHOLDER) t.content = ''
-              t.content += parsed.content
-              await scrollToBottom()
+            if (t) {
+              if (parsed.content) {
+                if (t.content === RAG_SEARCHING_PLACEHOLDER) t.content = ''
+                t.content += parsed.content
+                await scrollToBottom()
+              }
+              // 推理模型的思考过程：单独折叠显示
+              if (parsed.reasoning) {
+                t.thinkingRaw = (t.thinkingRaw || '') + parsed.reasoning
+                t.thinkingDone = false
+                await scrollToBottom()
+              }
             }
           } catch { /* 忽略非 JSON 帧（如不完整的行） */ }
         }
+      }
+
+      // 流式结束：标记思考过程已完成（如果本次存在 thinkingRaw）
+      const finalAssistant = messages.value.find(m => m.id === assistantId)
+      if (finalAssistant && finalAssistant.thinkingRaw) {
+        finalAssistant.thinkingDone = true
       }
 
       if (onStreamEnd) onStreamEnd(backendSessionId || sessionId)
@@ -509,7 +567,7 @@ async function _restoreActiveStreaming(sessionId: string) {
   return {
     messages, userInput, isTyping, loadingMessages,
     loadMessages, clearMessages, showWelcome,
-    sendMessage, adjustTextareaHeight, scrollToBottom,
+    sendMessage, adjustTextareaHeight, scrollToBottom, forceScrollToBottom,
     pendingImages, pendingDocuments,
     addPendingImage, removePendingImage,
     addPendingDocument, removePendingDocument,

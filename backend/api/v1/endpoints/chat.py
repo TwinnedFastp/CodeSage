@@ -12,7 +12,8 @@
 7. 无 session_id 时自动创建会话
 8. RAG 错误透传：检索失败/超时时通过 SSE 推 rag_error 给前端，不再静默吞异常
 9. RAG 检索前先推 rag_status=searching，避免前端在等待期完全无反馈
-10. 兼容推理模型：同时处理 delta.content 和 delta.reasoning_content
+10. 兼容推理模型：同时处理 delta.content 和 delta.reasoning_content，
+    reasoning_content 作为可折叠的"思考过程"单独推送给前端。
 """
 import asyncio
 import json
@@ -42,12 +43,13 @@ MAX_HISTORY_MESSAGES = 20
 async def _persist_message(
     db: AsyncSession, user_id: int, session_id: str, role: str, content: str,
     render_mode: str = "text", attachments: list[dict] | None = None,
+    reasoning: str | None = None,
 ):
     """落库一条消息，失败不阻断主流程但记录日志。"""
     try:
         await conversation_service.add_message(
             db, user_id, session_id, role, content, render_mode=render_mode,
-            attachments=attachments,
+            attachments=attachments, reasoning=reasoning,
         )
     except Exception:
         logger.exception("消息落库失败 user_id=%s session_id=%s role=%s", user_id, session_id, role)
@@ -131,9 +133,9 @@ async def _query_knowledge(
         return "", f"知识库检索失败：{exc}。已降级为普通对话。请在知识库面板查看文档状态或重建知识库。"
 
 
-def _build_system_prompt(knowledge: str, use_rag: bool) -> str:
-    """构建 system prompt，根据是否启用 RAG 决定是否注入知识背景。"""
-    base = CHAT_SYSTEM_PROMPT
+def _build_system_prompt(knowledge: str, use_rag: bool, user: User | None = None) -> str:
+    """构建 system prompt，根据是否启用 RAG 决定是否注入知识背景，并注入用户昵称。"""
+    base = CHAT_SYSTEM_PROMPT.format(user_nickname=user.username if user else "用户")
     if use_rag and knowledge and knowledge.strip():
         return (
             base
@@ -150,6 +152,7 @@ async def ai_response_generator(
     knowledge: str = "",
     use_rag: bool = False,
     attachments: list[dict] | None = None,
+    user: User | None = None,
 ):
     """
     大模型流式回复生成器。
@@ -173,7 +176,7 @@ async def ai_response_generator(
     # （AsyncOpenAI 内部有连接池，轻量创建无性能问题）
     client = AsyncOpenAI(api_key=api_key, base_url=base_url)
 
-    system_prompt = _build_system_prompt(knowledge, use_rag)
+    system_prompt = _build_system_prompt(knowledge, use_rag, user)
     messages = [{"role": "system", "content": system_prompt}] + history
 
     if attachments:
@@ -195,12 +198,15 @@ async def ai_response_generator(
             if not (chunk.choices and chunk.choices[0].delta):
                 continue
             delta = chunk.choices[0].delta
-            # 优先 delta.content（普通聊天模型）；
-            # 推理模型（如 GLM-4.5 / DeepSeek-R1 / QwQ）可能只在 reasoning_content 输出，
-            # content 为空，此时用 reasoning_content 作为内容输出，避免"AI 不说话"。
-            piece = delta.content or getattr(delta, "reasoning_content", None)
-            if piece:
-                yield f"data: {json.dumps({'content': piece}, ensure_ascii=False)}\n\n"
+            # 分别透传 content（正式回答）和 reasoning_content（推理过程）。
+            # 支持推理模型（GLM-4.5 / DeepSeek-R1 / QwQ）与普通模型；
+            # 只有 reasoning 时也会把思考过程展示给前端（聊天页折叠显示）。
+            content = delta.content
+            reasoning = getattr(delta, "reasoning_content", None)
+            if content:
+                yield f"data: {json.dumps({'content': content}, ensure_ascii=False)}\n\n"
+            if reasoning:
+                yield f"data: {json.dumps({'reasoning': reasoning}, ensure_ascii=False)}\n\n"
     except Exception as e:
         logger.exception("调用大模型失败 model=%s base_url=%s", llm_model, base_url)
         yield f"data: {json.dumps({'content': f'调用大模型发生错误：{str(e)}'}, ensure_ascii=False)}\n\n"
@@ -231,7 +237,7 @@ async def _maybe_auto_title(
 
 
 async def _streaming_with_persistence(
-    user_message: str, session_id: str, user_id: int, db: AsyncSession,
+    user_message: str, session_id: str, user: User, db: AsyncSession,
     provider_config: dict, use_rag: bool, mode: str,
     attachments: list[dict] | None = None,
 ):
@@ -254,10 +260,10 @@ async def _streaming_with_persistence(
     )
 
     # 1. 用户消息落库
-    await _persist_message(db, user_id, session_id, "user", user_message, attachments=attachments)
+    await _persist_message(db, user.id, session_id, "user", user_message, attachments=attachments)
 
     # 2. 读取历史（已包含本轮 user 消息）
-    history = await _load_history_messages(db, user_id, session_id)
+    history = await _load_history_messages(db, user.id, session_id)
 
     # 3. 知识检索：只有用户显式开启 RAG 模式才检索
     # 先推 rag_status 事件，让前端知道正在检索（避免等待期无反馈）
@@ -266,7 +272,7 @@ async def _streaming_with_persistence(
         yield f"data: {json.dumps({'rag_status': 'searching'}, ensure_ascii=False)}\n\n"
         # 传对话历史给 LightRAG，让它理解多轮上下文（对齐 LightRAG-main）
         knowledge, rag_error = await _query_knowledge(
-            user_id, provider_config, user_message, mode,
+            user.id, provider_config, user_message, mode,
             conversation_history=history,
         )
         if rag_error:
@@ -284,19 +290,23 @@ async def _streaming_with_persistence(
 
     # 5. 流式生成：增量写 Redis + 推前端（带断连保护）
     full_reply_parts: list[str] = []
+    reasoning_parts: list[str] = []
     client_disconnected = False
-    async for chunk in ai_response_generator(history, user_message, provider_config, knowledge, use_rag, attachments):
-        # 解析 chunk 提取 content，用于 Redis 缓存和最终落库
+    async for chunk in ai_response_generator(history, user_message, provider_config, knowledge, use_rag, attachments, user):
+        # 解析 chunk 提取 content / reasoning，用于 Redis 缓存和最终落库
         if chunk.startswith("data: ") and chunk.strip() != "data: [DONE]":
             data = chunk[6:].strip()
             try:
                 parsed = json.loads(data)
-                piece = parsed.get("content")
-                if piece:
-                    full_reply_parts.append(piece)
+                content_piece = parsed.get("content")
+                reasoning_piece = parsed.get("reasoning")
+                if content_piece:
+                    full_reply_parts.append(content_piece)
                     # 增量写入 Redis（失败不阻断，退化为纯内存流仍能落库）
                     if stream_token:
-                        await append_chunk(session_id, stream_token, piece)
+                        await append_chunk(session_id, stream_token, content_piece)
+                if reasoning_piece:
+                    reasoning_parts.append(reasoning_piece)
             except Exception:
                 pass
         # 推给前端（断连后跳过 yield，后端继续生成并缓存）
@@ -309,8 +319,12 @@ async def _streaming_with_persistence(
 
     # 6. assistant 回复落库（无论是否断连都落库，保证已生成内容不丢失）
     full_reply = "".join(full_reply_parts)
-    if full_reply:
-        await _persist_message(db, user_id, session_id, "assistant", full_reply)
+    reasoning_text = "".join(reasoning_parts)
+    if full_reply or reasoning_text:
+        await _persist_message(
+            db, user.id, session_id, "assistant", full_reply,
+            reasoning=reasoning_text or None,
+        )
 
     # 7. 写入 Stream 结束标记 + 清理 Redis 缓存
     if stream_token:
@@ -325,9 +339,9 @@ async def _streaming_with_persistence(
 
     # 8. 保底标题生成（客户端断开时仍执行落库，仅跳过 SSE 推送）
     try:
-        session = await conversation_service.get_session(db, user_id, UUID(session_id))
+        session = await conversation_service.get_session(db, user.id, UUID(session_id))
         new_title = await _maybe_auto_title(
-            db, user_id, session_id, session.title, provider_config,
+            db, user.id, session_id, session.title, provider_config,
         )
         if new_title and not client_disconnected:
             try:
@@ -339,7 +353,7 @@ async def _streaming_with_persistence(
 
 
 async def _component_streaming_with_persistence(
-    user_message: str, session_id: str, user_id: int, db: AsyncSession,
+    user_message: str, session_id: str, user: User, db: AsyncSession,
     provider_config: dict, use_rag: bool, mode: str,
 ):
     """
@@ -349,14 +363,14 @@ async def _component_streaming_with_persistence(
     3. 流式生成 JSONL：每收到完整行推 partial_component 给前端
     4. 即使客户端断开，后端继续完成生成并持久化（断线不丢数据）
     """
-    await _persist_message(db, user_id, session_id, "user", user_message, render_mode="component")
-    history = await _load_history_messages(db, user_id, session_id)
+    await _persist_message(db, user.id, session_id, "user", user_message, render_mode="component")
+    history = await _load_history_messages(db, user.id, session_id)
 
     knowledge = ""
     if use_rag:
         yield f"data: {json.dumps({'rag_status': 'searching'}, ensure_ascii=False)}\n\n"
         knowledge, rag_error = await _query_knowledge(
-            user_id, provider_config, user_message, mode,
+            user.id, provider_config, user_message, mode,
             conversation_history=history,
         )
         if rag_error:
@@ -387,7 +401,7 @@ async def _component_streaming_with_persistence(
 
     try:
         async for piece in stream_component_protocol_raw(
-            db, user_id, history, user_message, knowledge,
+            db, user.id, history, user_message, knowledge, user.username,
         ):
             if not piece:
                 continue
@@ -626,12 +640,12 @@ async def chat_streaming(
         yield f"data: {json.dumps({'session_id': session_id}, ensure_ascii=False)}\n\n"
         if render_mode == "component":
             async for chunk in _component_streaming_with_persistence(
-                message, session_id, user.id, db, provider_config, use_rag, mode,
+                message, session_id, user, db, provider_config, use_rag, mode,
             ):
                 yield chunk
             return
         async for chunk in _streaming_with_persistence(
-            message, session_id, user.id, db, provider_config, use_rag, mode,
+            message, session_id, user, db, provider_config, use_rag, mode,
             attachments=attachments if attachments else None,
         ):
             yield chunk
