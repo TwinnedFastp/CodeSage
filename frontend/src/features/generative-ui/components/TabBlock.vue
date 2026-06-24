@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { renderMarkdown } from '../utils/markdown'
 
 const props = defineProps<{ props: Record<string, any> }>()
 
@@ -14,16 +15,16 @@ const activeName = ref(tabs.value[0]?.label || 'tab0')
 </script>
 
 <template>
-  <div class="rounded-xl border border-[#E8E6E1] bg-white p-5">
-    <h4 v-if="title" class="font-serif text-[15px] text-[#111] mb-4">{{ title }}</h4>
-    <el-tabs v-model="activeName" type="border-card" class="!shadow-none !border-[#E8E6E1] [&_.el-tabs\_\_header]:!bg-[#FAFAFA]">
+  <div class="rounded-xl border border-(--color-border) bg-white dark:bg-[var(--el-bg-color-overlay)] p-5">
+    <h4 v-if="title" class="font-serif text-[15px] text-(--color-ink) mb-4">{{ title }}</h4>
+    <el-tabs v-model="activeName" type="border-card" class="!shadow-none !border-(--color-border) [&_.el-tabs__header]:!bg-(--color-canvas)">
       <el-tab-pane
         v-for="(tab, i) in tabs"
         :key="i"
         :label="tab.label"
         :name="tab.label"
       >
-        <p class="text-[14px] leading-relaxed text-[#333] whitespace-pre-wrap py-2">{{ tab.content }}</p>
+        <div class="text-[14px] leading-relaxed text-(--color-ink-soft) py-2 markdown-body" v-html="renderMarkdown(tab.content || '')" />
       </el-tab-pane>
     </el-tabs>
   </div>

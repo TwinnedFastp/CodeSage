@@ -3,7 +3,7 @@ import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
-  ChatDotRound, Operation, Plus, User as UserIcon, Monitor, Setting,
+  ChatDotRound, Operation, Plus, Monitor, Setting,
   Fold, Expand, Promotion, SwitchButton, Collection, Files, Cpu, Coin,
   Picture, Document, Close, Sunny, Moon,
 } from '@element-plus/icons-vue'
@@ -13,17 +13,59 @@ import { useSessions } from '@/composables/useSessions'
 import { useChat } from '@/composables/useChat'
 import { useRag } from '@/composables/useRag'
 import { useTheme } from '@/composables/useTheme'
+import { listProviders } from '@/api/providers'
+import type { Provider } from '@/api/providers'
 import KnowledgePanel from '@/components/KnowledgePanel.vue'
 // 复用单条会话项组件，避免桌面端/移动端两处列表重复代码
 import SessionListItem from '@/components/SessionListItem.vue'
 import GenerativePanel from '@/features/generative-ui/GenerativePanel.vue'
 import { marked } from 'marked'
 
-// 配置 marked 渲染选项
+// ---- Markdown 渲染增强：代码块卡片 + 表格单元格滚动 ----
+
+const escapeHtml = (text: string) =>
+  text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+
+const codeBlockIcons = {
+  copy: `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>`,
+  expand: `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"></path><path d="M16 3h3a2 2 0 0 1 2 2v3"></path><path d="M8 21H5a2 2 0 0 1-2-2v-3"></path><path d="M16 21h3a2 2 0 0 0 2-2v-3"></path></svg>`,
+}
+
 marked.setOptions({
   breaks: true,       // 支持换行符
   gfm: true,          // GitHub 风格 Markdown（表格、任务列表等）
 })
+
+marked.use({
+  renderer: {
+    code(code: string, language: string | undefined, _escaped: boolean) {
+      const lang = (language || 'text').split(' ')[0].toLowerCase() || 'text'
+      const safeCode = escapeHtml(code)
+      return `<div class="code-block-card">
+        <div class="code-block-header">
+          <span class="code-block-lang">${lang}</span>
+          <div class="code-block-actions">
+            <button type="button" class="code-block-btn" data-action="copy" data-code="${safeCode}" title="复制">${codeBlockIcons.copy}</button>
+            <button type="button" class="code-block-btn" data-action="expand" data-code="${safeCode}" title="新窗口展开">${codeBlockIcons.expand}</button>
+          </div>
+        </div>
+        <div class="code-block-body">
+          <pre class="custom-scrollbar"><code class="language-${lang}">${safeCode}</code></pre>
+        </div>
+      </div>`
+    },
+    tablecell(content: string, flags: { header: boolean; align: string | null }) {
+      const tag = flags.header ? 'th' : 'td'
+      const alignStyle = flags.align ? ` style="text-align:${flags.align}"` : ''
+      return `<${tag} class="markdown-table-cell"${alignStyle}><div class="markdown-cell-content custom-scrollbar">${content}</div></${tag}>`
+    },
+  },
+} as any)
 
 /** 将 Markdown 文本转为 HTML */
 function renderMarkdown(text: string): string {
@@ -34,6 +76,28 @@ function renderMarkdown(text: string): string {
   } catch {
     // 解析失败时转义 HTML 后原样返回
     return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  }
+}
+
+/** 代码块工具栏事件委托：复制 / 新窗口展开 */
+function onCodeBlockAction(e: MouseEvent) {
+  const btn = (e.target as HTMLElement).closest('[data-action]') as HTMLElement | null
+  if (!btn) return
+  const action = btn.getAttribute('data-action')
+  const rawCode = btn.getAttribute('data-code')
+  if (!rawCode) return
+  if (action === 'copy') {
+    navigator.clipboard.writeText(rawCode).then(() => {
+      ElMessage.success('已复制到剪贴板')
+    }).catch(() => {
+      ElMessage.error('复制失败')
+    })
+  } else if (action === 'expand') {
+    const w = window.open('', '_blank', 'width=900,height=700,menubar=no,toolbar=no')
+    if (w) {
+      w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>代码片段</title></head><body style="margin:0;padding:24px;background:#111827;color:#f3f4f6;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;white-space:pre;">${escapeHtml(rawCode)}</body></html>`)
+      w.document.close()
+    }
   }
 }
 
@@ -79,9 +143,43 @@ const {
 // ---- 主题切换 ---
 const { theme, themeLabel, toggleNext } = useTheme()
 
+// ---- 模型选择 ----
+const providers = ref<Provider[]>([])
+const selectedProviderId = ref<number | null>(null)
+const selectedModelName = computed(() => {
+  const p = providers.value.find(p => p.id === selectedProviderId.value)
+  return p ? `${p.provider_name} / ${p.llm_model}` : '默认模型'
+})
+
+async function loadProviders() {
+  try {
+    const res = await listProviders()
+    providers.value = Array.isArray(res) ? res : []
+    // 恢复上次选择
+    const saved = localStorage.getItem('codesage_preferred_provider_id')
+    if (saved) {
+      const id = parseInt(saved, 10)
+      if (providers.value.some(p => p.id === id)) {
+        selectedProviderId.value = id
+      }
+    } else {
+      // 默认选中已启用的供应商
+      const enabled = providers.value.find(p => p.is_enabled)
+      if (enabled) selectedProviderId.value = enabled.id
+    }
+  } catch {
+    // 静默失败，下拉框为空
+  }
+}
+
+function onProviderChange(id: number) {
+  selectedProviderId.value = id
+  localStorage.setItem('codesage_preferred_provider_id', String(id))
+}
+
 // ---- 初始化 ----
 ;(async () => {
-  await loadSessions()
+  await Promise.all([loadSessions(), loadProviders()])
   if (currentSessionId.value) {
     await loadMessages(currentSessionId.value)
   } else if (activeSessions.value.length > 0) {
@@ -175,7 +273,7 @@ function handleTitleKeydown(e: KeyboardEvent, sessionId: string) {
 }
 
 async function onSend() {
-  await doSend(async () => await createSession(), ragActive.value, ragMode.value === 'off' ? 'hybrid' : ragMode.value)
+  await doSend(async () => await createSession(), ragActive.value, ragMode.value === 'off' ? 'hybrid' : ragMode.value, selectedProviderId.value)
 }
 
 // RAG 模式切换选项（对齐 LightRAG-main 原生支持的查询模式）
@@ -305,21 +403,24 @@ const canSend = computed(() => {
     <!-- 桌面端侧边栏 -->
     <aside
       v-if="!isMobile"
-      :class="['bg-(--color-surface) transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] flex flex-col', isSidebarCollapse ? 'w-[80px]' : 'w-[280px]']"
+      :class="['bg-(--color-surface) transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] flex flex-col overflow-hidden', isSidebarCollapse ? 'w-[72px]' : 'w-[280px]']"
     >
-      <div class="p-6 flex items-center justify-between h-20">
+      <div :class="['flex items-center justify-between h-20', isSidebarCollapse ? 'px-3' : 'p-6']">
         <div v-if="!isSidebarCollapse" class="flex items-center gap-3 font-semibold text-lg tracking-tight">
           <div class="w-6 h-6 bg-(--color-ink) rounded-full flex items-center justify-center text-(--color-surface)">
             <el-icon :size="14"><ChatDotRound /></el-icon>
           </div>
           <span>CodeSage</span>
         </div>
-        <button @click="isSidebarCollapse = !isSidebarCollapse" class="p-2 rounded-full hover:bg-(--color-border) transition-colors text-(--color-muted) mx-auto">
+        <button v-else @click="isSidebarCollapse = !isSidebarCollapse" class="mx-auto p-2 rounded-full hover:bg-(--color-border) transition-colors text-(--color-muted)">
+          <el-icon :size="16"><ChatDotRound /></el-icon>
+        </button>
+        <button @click="isSidebarCollapse = !isSidebarCollapse" :class="['p-2 rounded-full hover:bg-(--color-border) transition-colors text-(--color-muted)', isSidebarCollapse ? '' : 'ml-auto']">
           <el-icon :size="18"><component :is="isSidebarCollapse ? Expand : Fold" /></el-icon>
         </button>
       </div>
 
-      <div class="px-5 mb-3 mt-1">
+      <div :class="[isSidebarCollapse ? 'px-2' : 'px-5', 'mb-3 mt-1']">
         <!-- 顶部小图标目录：快速进入聊天 / 归档 / 数据库 / 设置 -->
         <div class="grid grid-cols-4 gap-1.5 p-1.5 rounded-xl bg-(--color-surface-soft) border border-(--color-border) shadow-[0_2px_12px_rgb(0,0,0,0.03)]">
           <button
@@ -349,10 +450,10 @@ const canSend = computed(() => {
         </div>
       </div>
 
-      <div class="px-5 mb-6">
+      <div :class="[isSidebarCollapse ? 'px-2' : 'px-5', 'mb-6']">
         <button
           v-if="!showArchived"
-          class="w-full h-11 bg-(--color-ink) hover:bg-(--color-ink-soft) text-(--color-btn-primary-text) rounded-full flex items-center justify-center gap-2 transition-all duration-300 shadow-sm"
+          :class="['w-full h-11 bg-(--color-ink) hover:bg-(--color-ink-soft) text-(--color-btn-primary-text) rounded-full flex items-center justify-center gap-2 transition-all duration-300 shadow-sm', isSidebarCollapse ? 'px-1' : '']"
           @click="newConversation"
         >
           <el-icon><Plus /></el-icon>
@@ -368,7 +469,7 @@ const canSend = computed(() => {
         </button>
       </div>
 
-      <nav class="flex-1 overflow-y-auto px-3 py-2 space-y-1 custom-scrollbar">
+      <nav :class="['flex-1 overflow-y-auto py-2 space-y-1 custom-scrollbar', isSidebarCollapse ? 'px-2' : 'px-3']">
         <div class="flex items-center justify-between px-3 mb-2">
           <span class="text-[11px] font-semibold text-(--color-faint) uppercase tracking-wider">{{ showArchived ? '已归档' : '会话' }}</span>
           <span v-if="showArchived" class="text-[11px] text-(--color-faint)">{{ archivedSessions.length }} 个</span>
@@ -399,7 +500,7 @@ const canSend = computed(() => {
         </div>
       </nav>
 
-      <div class="p-5 border-t border-(--color-border)/50 relative">
+      <div :class="['border-t border-(--color-border)/50 relative', isSidebarCollapse ? 'p-2' : 'p-5']">
         <div class="flex items-center gap-3 cursor-pointer group" @click="userMenuVisible = !userMenuVisible">
           <el-avatar
             :size="36"
@@ -519,12 +620,12 @@ const canSend = computed(() => {
           <div class="flex items-center bg-(--color-surface) rounded-full p-0.5 border border-(--color-border)" title="回复渲染模式">
             <button
               @click="renderMode = 'text'"
-              :class="['px-3 py-1 rounded-full text-[12px] transition-all', renderMode === 'text' ? 'bg-(--color-ink) text-(--color-btn-primary-text) font-medium' : 'text-(--color-subtle) hover:text-(--color-ink)']"
-            >文本</button>
+              :class="['px-3 py-1 rounded-full text-[12px] transition-all duration-300 ease-out', renderMode === 'text' ? 'bg-(--color-ink) text-(--color-btn-primary-text) font-medium scale-[1.02]' : 'text-(--color-subtle) hover:text-(--color-ink) hover:scale-[1.02]']"
+            >普通对话</button>
             <button
               @click="renderMode = 'component'"
-              :class="['px-3 py-1 rounded-full text-[12px] transition-all', renderMode === 'component' ? 'bg-(--color-ink) text-(--color-btn-primary-text) font-medium' : 'text-(--color-subtle) hover:text-(--color-ink)']"
-            >生成式</button>
+              :class="['px-3 py-1 rounded-full text-[12px] transition-all duration-300 ease-out', renderMode === 'component' ? 'bg-(--color-ink) text-(--color-btn-primary-text) font-medium scale-[1.02]' : 'text-(--color-subtle) hover:text-(--color-ink) hover:scale-[1.02]']"
+            >交互式对话</button>
           </div>
           <button
             v-if="currentSession?.is_archived"
@@ -545,6 +646,29 @@ const canSend = computed(() => {
           </button>
           <button class="hover:text-(--color-ink) transition-colors"><el-icon :size="18"><Monitor /></el-icon></button>
           <button class="hover:text-(--color-ink) transition-colors"><el-icon :size="18"><Setting /></el-icon></button>
+          <!-- 模型选择 -->
+          <el-select
+            v-if="providers.length > 0"
+            :model-value="selectedProviderId"
+            @change="onProviderChange"
+            :placeholder="selectedModelName"
+            size="small"
+            class="!w-[160px] model-select"
+            :teleported="false"
+          >
+            <el-option
+              v-for="p in providers"
+              :key="p.id"
+              :label="`${p.provider_name} / ${p.llm_model}`"
+              :value="p.id"
+            >
+              <div class="flex items-center gap-2">
+                <span class="font-medium text-[13px]">{{ p.provider_name }}</span>
+                <span class="text-[11px] text-(--color-subtle) font-mono">{{ p.llm_model }}</span>
+                <span v-if="p.is_enabled" class="text-[9px] px-1.5 py-0.5 rounded-full bg-[#EFF6FF] text-[#2563EB]">启用</span>
+              </div>
+            </el-option>
+          </el-select>
           <!-- 主题切换 -->
           <button
             class="hover:text-(--color-ink) transition-colors"
@@ -559,12 +683,18 @@ const canSend = computed(() => {
       </header>
 
       <template v-if="renderMode === 'text'">
-      <div ref="chatContainer" class="flex-1 min-h-0 overflow-y-auto pt-24 pb-44 px-4 md:px-12 scroll-smooth custom-scrollbar">
+      <div ref="chatContainer" class="flex-1 min-h-0 overflow-y-auto pt-24 pb-44 px-4 md:px-12 scroll-smooth custom-scrollbar" @click="onCodeBlockAction">
         <div class="max-w-3xl mx-auto space-y-10 pb-6">
           <div v-if="loadingMessages" class="text-center text-[13px] text-(--color-faint) py-8">加载消息中…</div>
           <div v-for="msg in messages" :key="msg.id" :class="['flex gap-5 animate-fade-in-up', msg.role === 'user' ? 'flex-row-reverse' : '']">
-            <div :class="['w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-1', msg.role === 'user' ? 'bg-(--color-surface-soft) text-(--color-ink)' : 'bg-(--color-ink) text-(--color-canvas)']">
-              <el-icon :size="14"><component :is="msg.role === 'user' ? UserIcon : ChatDotRound" /></el-icon>
+            <!-- 用户头像：有 avatar_url 时显示真实图片，否则显示首字母 -->
+            <div v-if="msg.role === 'user'" class="w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-1 overflow-hidden bg-(--color-surface-soft)">
+              <img v-if="displayAvatarUrl" :src="displayAvatarUrl" class="w-full h-full object-cover" alt="avatar" />
+              <span v-else class="text-(--color-ink) text-[13px] font-semibold">{{ displayUsername.slice(0, 1).toUpperCase() }}</span>
+            </div>
+            <!-- AI 头像：固定图标 -->
+            <div v-else class="w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-1 bg-(--color-ink) text-(--color-canvas)">
+              <el-icon :size="14"><ChatDotRound /></el-icon>
             </div>
             <div :class="['max-w-[85%] leading-relaxed text-[15px]', msg.role === 'user' ? 'bg-(--color-surface) text-(--color-ink) px-5 py-3.5 rounded-2xl rounded-tr-sm' : 'text-(--color-ink) pt-1']">
               <div v-if="msg._isComponent && msg.role === 'assistant'" class="mb-2 flex items-center gap-1.5 text-[11px] text-(--color-accent) font-medium">
@@ -642,7 +772,7 @@ const canSend = computed(() => {
               v-model="userInput"
               rows="1"
               :placeholder="currentSessionId ? (ragActive ? '基于知识库提问...' : 'Ask anything...') : '点击 New Conversation 开始对话...'"
-              class="w-full max-h-[200px] bg-transparent border-none outline-none resize-none py-3 px-4 text-[15px] leading-relaxed text-(--color-ink) placeholder:text-(--color-faintest) custom-scrollbar"
+              class="w-full max-h-[200px] bg-transparent border-none outline-none resize-none py-3 pl-2 pr-4 text-[15px] leading-relaxed text-(--color-ink) placeholder:text-(--color-faintest) custom-scrollbar"
               @input="adjustTextareaHeight"
               @keydown.enter.prevent="onSend"
               @paste="onPasteImage"
@@ -662,6 +792,7 @@ const canSend = computed(() => {
         :use-rag="ragActive"
         :rag-mode="ragMode === 'off' ? 'hybrid' : ragMode"
         @session-created="onGenSessionCreated"
+        @title-generated="applyGeneratedTitle"
       />
     </main>
 

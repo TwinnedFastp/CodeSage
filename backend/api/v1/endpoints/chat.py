@@ -312,9 +312,13 @@ async def _streaming_with_persistence(
     if full_reply:
         await _persist_message(db, user_id, session_id, "assistant", full_reply)
 
-    # 7. 清理 Redis 缓存（内容已落库 PG，临时态可释放）
+    # 7. 写入 Stream 结束标记 + 清理 Redis 缓存
     if stream_token:
         try:
+            from backend.core.streaming_cache import write_end_stream
+            # 先写 end 标记，让消费端知道生成已完成
+            await write_end_stream(session_id, full_reply or "")
+            # 然后清理（释放锁）
             await finalize_streaming(session_id, stream_token)
         except Exception:
             logger.debug("清理流式缓存失败 session_id=%s", session_id, exc_info=True)
@@ -568,12 +572,13 @@ async def chat_streaming(
     session_id = payload.get("session_id")
     images = payload.get("images", [])
     documents = payload.get("documents", [])
+    preferred_provider_id = payload.get("preferred_provider_id")
 
     if not message and not images and not documents:
         return JSONResponse(status_code=422, content={"message": "消息不能为空"})
 
-    # 解析用户生效的供应商配置（唯一来源：数据库 ai_providers 表）
-    provider_config = await resolve_provider_config(db, user.id)
+    # 解析用户生效的供应商配置（支持前端指定 preferred_provider_id）
+    provider_config = await resolve_provider_config(db, user.id, provider_id=preferred_provider_id)
     if not provider_config:
         return JSONResponse(
             status_code=400,
@@ -653,3 +658,125 @@ async def get_active_streaming(
     from backend.core.streaming_cache import list_active_streaming
     items = await list_active_streaming(str(session_id))
     return {"items": items, "count": len(items)}
+
+
+@router.get("/stream/continue")
+async def stream_continue(
+    session_id: str,
+    last_msg_id: str = "0-0",
+    user: User = Depends(get_current_user),
+):
+    """
+    SSE 断点续传接口（基于 Redis Stream XREAD BLOCK）。
+
+    用户刷新页面或断连后，调用此接口从断点继续接收剩余的流式消息。
+
+    请求参数：
+    - session_id: 会话 ID
+    - last_msg_id: 上次收到的最后一条消息 ID（首次传 "0-0"）
+
+    SSE 事件格式：
+    - message: 普通流式内容 {"msgId":"...", "type":"content|start|end|error", "content":"..."}
+    - done:   生成结束
+    - error:  异常错误
+
+    行为说明：
+    1. 先推送断连期间已产生的所有历史消息（XRANGE 批量补推）
+    2. 然后进入 XREAD BLOCK 阻塞循环，实时推送后续新消息
+    3. 收到 end 标记后关闭连接
+    4. 心跳保活：每 15s 推送一个注释行 ": ping\n\n" 防止浏览器断开
+
+    与旧 GET /streaming/{session_id} 的区别：
+    - 旧接口：一次性返回快照 + 前端轮询（1.5s 延迟）
+    - 新接口：长连接 SSE 实时推送（真正的断点续传，无延迟）
+    """
+    from backend.core.streaming_cache import get_stream_messages, read_stream_block, check_session_status
+
+    # 快速检查会话状态
+    status = await check_session_status(session_id)
+
+    # Stream 不存在或已完成且无消息 → 提示前端无需恢复
+    if status["messageCount"] == 0:
+        return StreamingResponse(
+            _sse_error("会话不存在或已过期，请重新发送消息"),
+            media_type="text/event-stream",
+        )
+
+    # 已完成且有数据 → 返回完整历史后关闭（不阻塞）
+    if not status["isActive"] and status["messageCount"] > 0:
+        async def _completed_snapshot():
+            result = await get_stream_messages(session_id, last_id="0-0", count=500)
+            for msg in result["messages"]:
+                yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
+            yield "data: [DONE]\n\n"
+        return StreamingResponse(_completed_snapshot(), media_type="text/event-stream")
+
+    # 仍在进行中或有历史消息 → 进入完整的断点续传流程
+    async def _continue_stream():
+        # 阶段1：批量推送历史消息（从 last_msg_id 之后开始）
+        try:
+            history = await get_stream_messages(session_id, last_id=last_msg_id, count=500)
+        except Exception as exc:
+            logger.warning("读取 Stream 历史失败 sid=%s", session_id, exc_info=True)
+            async for chunk in _sse_error("读取流式缓存失败"):
+                yield chunk
+            return
+
+        current_last_id = last_msg_id
+        for msg in history["messages"]:
+            current_last_id = msg["msgId"]
+            # start 类型消息不需要推给前端（仅元信息）
+            if msg["type"] == "start":
+                continue
+            yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
+
+        # 如果已经完成，直接返回 DONE
+        if history["isComplete"]:
+            yield "data: [DONE]\n\n"
+            return
+
+        if history["hasError"]:
+            yield "data: [DONE]\n\n"
+            return
+
+        # 阶段2：进入 XREAD BLOCK 阻塞循环，持续推送新消息
+        heartbeat_counter = 0
+        HEARTBEAT_INTERVAL = 30  # 每 30 次 loop（约 150s）发送一次心跳
+
+        while True:
+            block_result = await read_stream_block(
+                session_id,
+                last_id=current_last_id if current_last_id != "0-0" else "$",
+                count=10,
+                block_ms=5000,  # 5 秒超时（用于发送心跳）
+            )
+
+            if block_result is None:
+                # Redis 异常
+                async for chunk in _sse_error("Redis 连接异常"):
+                    yield chunk
+                break
+
+            for msg in block_result["messages"]:
+                current_last_id = msg["msgId"]
+                if msg["type"] == "start":
+                    continue
+                yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
+
+            if block_result["isComplete"] or block_result["hasError"]:
+                yield "data: [DONE]\n\n"
+                break
+
+            # 心跳保活（防止浏览器/代理因无数据超时断开 SSE）
+            heartbeat_counter += 1
+            if heartbeat_counter >= HEARTBEAT_INTERVAL or block_result["timedOut"]:
+                yield ": ping\n\n"
+                heartbeat_counter = 0
+
+    return StreamingResponse(_continue_stream(), media_type="text/event-stream")
+
+
+def _sse_error(message: str):
+    """生成 SSE 错误事件的辅助函数。"""
+    yield f"data: {json.dumps({'type': 'error', 'content': message}, ensure_ascii=False)}\n\n"
+    yield "data: [DONE]\n\n"

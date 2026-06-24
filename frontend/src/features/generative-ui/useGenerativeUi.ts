@@ -51,6 +51,7 @@ export function useGenerativeUi() {
     sessionId?: string,
     useRag = false,
     mode = 'hybrid',
+    onTitleGenerated?: (sessionId: string, title: string) => void,
   ): Promise<string | null> {
     if (!message.trim() || streaming.value) return null
 
@@ -116,6 +117,11 @@ export function useGenerativeUi() {
             }
             if (parsed.session_id && !backendSessionId) {
               backendSessionId = parsed.session_id as string
+              continue
+            }
+            // 标题自动生成事件：通知外部更新会话标题（修复生成式模式下标题不更新问题）
+            if (parsed.title && parsed.session_id && onTitleGenerated) {
+              onTitleGenerated(parsed.session_id, parsed.title)
               continue
             }
             // JSONL 增量：标题行

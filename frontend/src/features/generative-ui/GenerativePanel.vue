@@ -20,6 +20,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'session-created', id: string): void
+  (e: 'title-generated', sessionId: string, title: string): void
 }>()
 
 const router = useRouter()
@@ -61,7 +62,9 @@ async function onSend() {
   const ta = container.value?.parentElement?.querySelector<HTMLTextAreaElement>('.gen-textarea')
   if (ta) ta.style.height = 'auto'
   const mode = props.ragMode === 'off' ? 'hybrid' : props.ragMode || 'hybrid'
-  const id = await streamComponentChat(text, props.sessionId || undefined, !!props.useRag, mode)
+  const id = await streamComponentChat(text, props.sessionId || undefined, !!props.useRag, mode, (sid, title) => {
+    emit('title-generated', sid, title)
+  })
   if (id && id !== props.sessionId) {
     pendingSessionId = id
     emit('session-created', id)

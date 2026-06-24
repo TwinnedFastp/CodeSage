@@ -2,17 +2,17 @@
  * 聊天消息管理：加载历史 / 流式发送 / 滚动控制
  *
  * 会话持久化能力（防刷新/断连丢失）：
- * 1. 流式接收中刷新页面 → 从后端 Redis 恢复"进行中"的消息内容，并轮询续看生成
- * 2. beforeunload / visibilitychange(hidden) → 将输入框草稿保存到 localStorage
- * 3. 重新进入页面 → 自动恢复上次未发送的输入草稿
- * 4. 流式中断 → 后端继续生成并落库 PG，前端刷新后通过历史 + streaming 恢复完整内容
+ * 1. 流式接收中刷新页面 → 通过 SSE 断点续传从 Redis Stream 恢复剩余消息（实时推送，非轮询）
+ * 2. beforeunload / visibilitychange(hidden) → 将输入框草稿 + 流式断点保存到 localStorage
+ * 3. 重新进入页面 → 自动恢复上次未发送的输入草稿 + 建立断点续传连接
+ * 4. 流式中断 → 后端继续生成并写 Stream，前端刷新后通过 XREAD BLOCK 实时续接
  */
 import { ref, nextTick, watch, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import * as convApi from '@/api/conversations'
-import { getActiveStreaming } from '@/api/chat'
-import type { DisplayMessage, MessageAttachment, PendingImage, PendingDocument } from '@/types'
+import { getActiveStreaming, continueStream, setStreamResumePoint, clearStreamResumePoint } from '@/api/chat'
+import type { DisplayMessage, MessageAttachment, PendingImage, PendingDocument, StreamMessage } from '@/types'
 
 // 进行中流式消息的轮询间隔：1.5s 平衡实时性与请求量
 const STREAMING_POLL_INTERVAL = 1500
@@ -41,37 +41,44 @@ export function useChat(
     content: '你好。我是 CodeSage，你的代码工程师。有什么我可以帮你的吗？',
   }
 
-  // ---- 进行中流式消息轮询（刷新恢复用）----
-  let streamingPollTimer: ReturnType<typeof setTimeout> | null = null
+// ---- 流式断点续传（SSE 长连接，替代旧版轮询）----
+let continueController: AbortController | null = null
 
-  function _stopStreamingPoll() {
-    if (streamingPollTimer) {
-      clearTimeout(streamingPollTimer)
-      streamingPollTimer = null
-    }
+function _stopContinueStream() {
+  if (continueController) {
+    continueController.abort()
+    continueController = null
   }
+}
 
-  /** 判断某条消息是否为"进行中流式"占位（id 以 streaming- 开头） */
-  function _isStreamingPlaceholder(m: DisplayMessage): boolean {
-    return m.id.startsWith('streaming-')
-  }
+/** 判断某条消息是否为"进行中流式"占位（id 以 streaming- 开头） */
+function _isStreamingPlaceholder(m: DisplayMessage): boolean {
+  return m.id.startsWith('streaming-')
+}
 
-  /** 移除所有流式占位消息（流式结束、切换会话、发送新消息时调用） */
-  function _clearStreamingPlaceholders() {
-    messages.value = messages.value.filter(m => !_isStreamingPlaceholder(m))
-  }
+/** 移除所有流式占位消息（流式结束、切换会话、发送新消息时调用） */
+function _clearStreamingPlaceholders() {
+  messages.value = messages.value.filter(m => !_isStreamingPlaceholder(m))
+}
 
-  /**
-   * 恢复进行中的流式消息：从后端 Redis 读取并追加到消息列表末尾。
-   * 用户刷新页面 / 重新进入时调用，让"生成中"的内容不丢失。
-   */
-  async function _restoreActiveStreaming(sessionId: string) {
-    _stopStreamingPoll()
-    try {
-      const res = await getActiveStreaming(sessionId)
-      if (res.count === 0) return
-      for (const item of res.items) {
-        // 避免重复追加（loadMessages 刷新时可能残留）
+/**
+ * 通过 SSE 断点续传恢复进行中的流式消息（替代旧版轮询）。
+ *
+ * 用户刷新页面 / 重新进入时调用，建立长连接从 Redis Stream 实时接收剩余消息。
+ * 行为：
+ * 1. 先尝试快速恢复：GET /chat/streaming/{sid} 获取当前缓存快照（兜底）
+ * 2. 然后建立 SSE 续传连接：GET /chat/stream/continue?last_msg_id=...
+ * 3. 实时接收新 chunk 并渲染，直到收到 [DONE]
+ */
+async function _restoreActiveStreaming(sessionId: string) {
+  _stopContinueStream()
+  _stopStreamingPoll() // 兼容旧逻辑
+
+  // 快速检查是否有活跃流式消息（兼容旧 String 缓存方案）
+  try {
+    const snapshot = await getActiveStreaming(sessionId)
+    if (snapshot.count > 0) {
+      for (const item of snapshot.items) {
         const exists = messages.value.find(m => m.id === `streaming-${item.stream_token}`)
         if (exists) {
           exists.content = item.content
@@ -85,12 +92,81 @@ export function useChat(
         })
       }
       await scrollToBottom()
-      _startStreamingPoll(sessionId)
-    } catch (err) {
-      // 静默忽略（Redis 未启用 / 网络异常），不影响正常聊天
-      console.debug('恢复流式消息失败', err)
     }
+  } catch {
+    // 忽略快照查询失败，继续尝试 SSE 续传
   }
+
+  // 建立 SSE 断点续传连接
+  const lastMsgId = getStreamResumePoint(sessionId) || '0-0'
+  const assistantId = `streaming-resume-${Date.now()}`
+
+  // 添加恢复状态提示（如果还没有内容）
+  const existingContent = messages.value.filter(_isStreamingPlaceholder).some(m => m.content.length > 0)
+  if (!existingContent && messages.value.find(m => m.id === assistantId)?.content === undefined) {
+    messages.value.push({
+      id: assistantId,
+      role: 'assistant',
+      content: '',
+      pending: true,
+      _isResuming: true, // 标记为"恢复中"状态
+    })
+    await scrollToBottom()
+  }
+
+  continueController = continueStream(
+    sessionId,
+    lastMsgId,
+    // onMessage: 收到新 chunk
+    async (msg: StreamMessage) => {
+      // 更新断点位置到 localStorage
+      setStreamResumePoint(sessionId, msg.msgId)
+
+      if (msg.type === 'error') {
+        const target = messages.value.find(m => m.id === assistantId)
+        if (target) {
+          target.content = msg.content || '生成过程中发生错误'
+          target.pending = false
+          delete target._isResuming
+        }
+        return
+      }
+
+      if (msg.type !== 'content') return
+
+      // 找到或创建目标消息气泡
+      let target = messages.value.find(m => m.id === assistantId)
+      if (!target) {
+        target = { id: assistantId, role: 'assistant', content: '', pending: true }
+        messages.value.push(target)
+      }
+
+      // 移除"恢复中"标记，开始显示实际内容
+      delete target._isResuming
+      target.content += msg.content
+      await scrollToBottom()
+    },
+    // onDone: 流式结束
+    async () => {
+      _stopContinueStream()
+      clearStreamResumePoint(sessionId)
+
+      // 移除占位，重新从 PG 加载最终态（保证数据一致性）
+      _clearStreamingPlaceholders()
+      await loadMessages(sessionId)
+
+      if (onStreamEnd) onStreamEnd(sessionId)
+    },
+    // onError: 连接错误
+    async (err: string) => {
+      console.debug('断点续传连接异常', err)
+      _stopContinueStream()
+
+      // 降级：移除恢复占位，让用户看到已加载的历史消息
+      _clearStreamingPlaceholders()
+    }
+  )
+}
 
   /**
    * 轮询进行中的流式消息，实时更新内容。
@@ -263,7 +339,7 @@ export function useChat(
     target.style.height = Math.min(target.scrollHeight, 200) + 'px'
   }
 
-  async function sendMessage(ensureSession: () => Promise<string | null>, useRag: boolean = false, mode: string = 'hybrid') {
+  async function sendMessage(ensureSession: () => Promise<string | null>, useRag: boolean = false, mode: string = 'hybrid', preferredProviderId?: number | null) {
     if (!userInput.value.trim() && pendingImages.value.length === 0 && pendingDocuments.value.length === 0) return
     if (isTyping.value) return
 
@@ -326,6 +402,7 @@ export function useChat(
           mode,
           images: imagesBase64.length > 0 ? imagesBase64 : undefined,
           documents: docsPayload.length > 0 ? docsPayload : undefined,
+          preferred_provider_id: preferredProviderId || undefined,
         }),
       })
       if (!response.ok) throw new Error(`HTTP ${response.status}`)

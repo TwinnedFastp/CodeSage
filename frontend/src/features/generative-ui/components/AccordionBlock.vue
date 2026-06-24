@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { renderMarkdown } from '../utils/markdown'
 
 const props = defineProps<{ props: Record<string, any> }>()
 
@@ -18,17 +19,17 @@ const activeNames = ref<string[]>(
 </script>
 
 <template>
-  <div class="rounded-xl border border-[#E8E6E1] bg-white p-5">
-    <h4 v-if="title" class="font-serif text-[15px] text-[#111] mb-4">{{ title }}</h4>
+  <div class="rounded-xl border border-(--color-border) bg-white dark:bg-[var(--el-bg-color-overlay)] p-5">
+    <h4 v-if="title" class="font-serif text-[15px] text-(--color-ink) mb-4">{{ title }}</h4>
     <el-collapse v-model="activeNames" class="!border-0">
       <el-collapse-item
         v-for="(item, i) in items"
         :key="i"
         :title="item.title"
         :name="`item${i}`"
-        class="[&_.el-collapse-item\_\_header]:!text-[13px] [&_.el-collapse-item\_\_header]:!font-semibold [&_.el-collapse-item\_\_header]:!border-b-[#E8E6E1]"
+        class="[&_.el-collapse-item__header]:!text-[13px] [&_.el-collapse-item__header]:!font-semibold [&_.el-collapse-item__header]:!border-b-(--color-border)"
       >
-        <p class="text-[13px] leading-relaxed text-[#555] whitespace-pre-wrap py-2">{{ item.content }}</p>
+        <div class="text-[13px] leading-relaxed text-(--color-muted) py-2 markdown-body" v-html="renderMarkdown(item.content || '')" />
       </el-collapse-item>
     </el-collapse>
   </div>

@@ -213,12 +213,13 @@ async def get_active_provider_config(db: AsyncSession, user_id: int) -> dict | N
     }
 
 
-async def resolve_provider_config(db: AsyncSession, user_id: int) -> dict | None:
+async def resolve_provider_config(db: AsyncSession, user_id: int, provider_id: int | None = None) -> dict | None:
     """
     解析用户生效的供应商配置（唯一配置源：数据库 ai_providers 表）
 
     优先返回 is_enabled=True 的记录（最近更新优先）。
-    无启用配置时返回 None（调用方应提示用户前往设置页配置供应商）。
+    若指定 provider_id 则直接查询该供应商（无论是否启用）。
+    无匹配配置时返回 None。
 
     返回字典结构：{
         "source": "db",
@@ -230,6 +231,24 @@ async def resolve_provider_config(db: AsyncSession, user_id: int) -> dict | None
         "embedding_dim": int,
     }
     """
+    # 如果前端指定了 preferred_provider_id，直接用该供应商
+    if provider_id:
+        from sqlalchemy import select
+        from ..models.provider import AIProvider
+        stmt = select(AIProvider).where(AIProvider.id == provider_id, AIProvider.user_id == user_id)
+        result = await db.execute(stmt)
+        specific = result.scalar_one_or_none()
+        if specific:
+            return {
+                "source": "db",
+                "provider_name": specific.provider_name,
+                "llm_api_key": specific.llm_api_key,
+                "llm_base_url": specific.llm_base_url,
+                "llm_model": specific.llm_model,
+                "embedding_model": specific.embedding_model,
+                "embedding_dim": specific.embedding_dim,
+            }
+
     db_config = await get_active_provider_config(db, user_id)
     if db_config:
         return {

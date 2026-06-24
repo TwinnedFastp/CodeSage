@@ -182,41 +182,41 @@ function onAvatarInput(event: Event) {
 </script>
 
 <template>
-  <div class="flex flex-col md:flex-row h-screen w-screen bg-[#FAFAFA] text-[#111111] overflow-hidden antialiased font-sans">
+  <div class="flex flex-col md:flex-row h-screen w-screen bg-(--color-canvas) text-(--color-ink) overflow-hidden antialiased font-sans">
 
     <!-- 左侧导航（桌面端） -->
-    <aside v-if="!isMobile" class="w-[280px] bg-[#F3F2EE] flex flex-col shrink-0">
+    <aside v-if="!isMobile" class="w-[280px] bg-(--color-surface) flex flex-col shrink-0">
       <div class="p-6 flex items-center justify-between h-20">
-        <button @click="router.push('/chat')" class="flex items-center gap-2 text-[13px] text-[#777] hover:text-[#111] transition-colors">
+        <button @click="router.push('/chat')" class="flex items-center gap-2 text-[13px] text-(--color-muted) hover:text-(--color-ink) transition-colors">
           <el-icon :size="16"><ArrowLeft /></el-icon>
           <span>返回对话</span>
         </button>
       </div>
 
       <div class="px-6 mb-6">
-        <h1 class="font-serif text-2xl tracking-tight text-[#111]">设置</h1>
-        <p class="text-[12px] text-[#999] mt-1">管理你的账户与模型配置</p>
+        <h1 class="font-serif text-2xl tracking-tight text-(--color-ink)">设置</h1>
+        <p class="text-[12px] text-(--color-faint) mt-1">管理你的账户与模型配置</p>
       </div>
 
       <nav class="flex-1 px-3 space-y-1">
         <button
           @click="activeTab = 'account'"
-          :class="['w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-[14px]', activeTab === 'account' ? 'bg-white text-[#111] font-medium shadow-sm' : 'text-[#666] hover:bg-[#E8E6E1]']"
+          :class="['w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-[14px]', activeTab === 'account' ? 'bg-white dark:bg-[var(--el-bg-color-overlay)] text-(--color-ink) font-medium shadow-sm' : 'text-(--color-subtle) hover:bg-[#E8E6E1]']"
         >
           <el-icon :size="18"><UserIcon /></el-icon>
           <span>账户信息</span>
         </button>
         <button
           @click="activeTab = 'providers'"
-          :class="['w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-[14px]', activeTab === 'providers' ? 'bg-white text-[#111] font-medium shadow-sm' : 'text-[#666] hover:bg-[#E8E6E1]']"
+          :class="['w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-[14px]', activeTab === 'providers' ? 'bg-white dark:bg-[var(--el-bg-color-overlay)] text-(--color-ink) font-medium shadow-sm' : 'text-(--color-subtle) hover:bg-[#E8E6E1]']"
         >
           <el-icon :size="18"><Cpu /></el-icon>
           <span>模型供应商</span>
-          <span v-if="providers.length > 0" class="ml-auto text-[11px] px-2 py-0.5 rounded-full bg-[#E8E6E1] text-[#666]">{{ providers.length }}</span>
+          <span v-if="providers.length > 0" class="ml-auto text-[11px] px-2 py-0.5 rounded-full bg-[#E8E6E1] text-(--color-subtle)">{{ providers.length }}</span>
         </button>
       </nav>
 
-      <div class="p-5 border-t border-[#E8E6E1]/50">
+      <div class="p-5 border-t border-(--color-border)/50">
         <div class="flex items-center gap-3 mb-3">
           <el-avatar
             :size="36"
@@ -227,48 +227,48 @@ function onAvatarInput(event: Event) {
           </el-avatar>
           <div class="flex flex-col min-w-0">
             <span class="text-[13px] font-semibold truncate">{{ displayName }}</span>
-            <span class="text-[11px] text-[#777]">{{ auth.user?.email_verified ? '已验证' : '未验证' }}</span>
+            <span class="text-[11px] text-(--color-muted)">{{ auth.user?.email_verified ? '已验证' : '未验证' }}</span>
           </div>
         </div>
-        <button class="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-full text-[12px] text-[#777] hover:text-[#111] hover:bg-[#E8E6E1] transition-colors" @click="onLogout">
+        <button class="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-full text-[12px] text-(--color-muted) hover:text-(--color-ink) hover:bg-[#E8E6E1] transition-colors" @click="onLogout">
           <span>退出登录</span>
         </button>
       </div>
     </aside>
 
     <!-- 顶部导航（移动端）：返回 + 标签切换 -->
-    <header v-else class="shrink-0 bg-[#F3F2EE] border-b border-[#E8E6E1]/60">
+    <header v-else class="shrink-0 bg-(--color-surface) border-b border-(--color-border)/60">
       <div class="flex items-center justify-between px-4 h-14">
-        <button @click="router.push('/chat')" class="flex items-center gap-1.5 text-[13px] text-[#777] hover:text-[#111] transition-colors">
+        <button @click="router.push('/chat')" class="flex items-center gap-1.5 text-[13px] text-(--color-muted) hover:text-(--color-ink) transition-colors">
           <el-icon :size="16"><ArrowLeft /></el-icon>
           <span>返回</span>
         </button>
-        <h1 class="font-serif text-lg tracking-tight text-[#111]">设置</h1>
-        <button @click="onLogout" class="text-[12px] text-[#777] hover:text-[#111] transition-colors">退出</button>
+        <h1 class="font-serif text-lg tracking-tight text-(--color-ink)">设置</h1>
+        <button @click="onLogout" class="text-[12px] text-(--color-muted) hover:text-(--color-ink) transition-colors">退出</button>
       </div>
       <!-- 顶部标签条 -->
       <nav class="flex px-2 pb-2 gap-1">
         <button
           @click="router.push('/database-admin')"
-          class="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg transition-all text-[13px] text-[#666]"
+          class="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg transition-all text-[13px] text-(--color-subtle)"
         >
           <el-icon :size="15"><Coin /></el-icon>
           <span>数据库</span>
         </button>
         <button
           @click="activeTab = 'account'"
-          :class="['flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg transition-all text-[13px]', activeTab === 'account' ? 'bg-white text-[#111] font-medium shadow-sm' : 'text-[#666]']"
+          :class="['flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg transition-all text-[13px]', activeTab === 'account' ? 'bg-white dark:bg-[var(--el-bg-color-overlay)] text-(--color-ink) font-medium shadow-sm' : 'text-(--color-subtle)']"
         >
           <el-icon :size="15"><UserIcon /></el-icon>
           <span>账户</span>
         </button>
         <button
           @click="activeTab = 'providers'"
-          :class="['flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg transition-all text-[13px]', activeTab === 'providers' ? 'bg-white text-[#111] font-medium shadow-sm' : 'text-[#666]']"
+          :class="['flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg transition-all text-[13px]', activeTab === 'providers' ? 'bg-white dark:bg-[var(--el-bg-color-overlay)] text-(--color-ink) font-medium shadow-sm' : 'text-(--color-subtle)']"
         >
           <el-icon :size="15"><Cpu /></el-icon>
           <span>供应商</span>
-          <span v-if="providers.length > 0" class="text-[10px] px-1.5 py-0.5 rounded-full bg-[#E8E6E1] text-[#666]">{{ providers.length }}</span>
+          <span v-if="providers.length > 0" class="text-[10px] px-1.5 py-0.5 rounded-full bg-[#E8E6E1] text-(--color-subtle)">{{ providers.length }}</span>
         </button>
       </nav>
     </header>
@@ -280,10 +280,10 @@ function onAvatarInput(event: Event) {
         <!-- 账户信息 -->
         <div v-if="activeTab === 'account'" class="animate-fade-in-up">
           <h2 class="font-serif text-3xl tracking-tight mb-2">账户信息</h2>
-          <p class="text-[13px] text-[#999] mb-10">你的账户基础信息与安全状态</p>
+          <p class="text-[13px] text-(--color-faint) mb-10">你的账户基础信息与安全状态</p>
 
           <div class="space-y-6">
-            <div class="bg-white rounded-2xl border border-[#E8E6E1] p-6">
+            <div class="bg-white dark:bg-[var(--el-bg-color-overlay)] rounded-2xl border border-(--color-border) p-6">
               <div class="flex items-center justify-between gap-4">
                 <div class="flex items-center gap-4">
                   <div class="w-12 h-12 rounded-xl bg-[#111] text-white flex items-center justify-center">
@@ -291,7 +291,7 @@ function onAvatarInput(event: Event) {
                   </div>
                   <div>
                     <p class="text-[15px] font-semibold">PostgreSQL 数据库管理</p>
-                    <p class="text-[12px] text-[#999] mt-0.5">查看 public 表、分页查询、按主键新增/编辑/删除记录</p>
+                    <p class="text-[12px] text-(--color-faint) mt-0.5">查看 public 表、分页查询、按主键新增/编辑/删除记录</p>
                   </div>
                 </div>
                 <button
@@ -303,7 +303,7 @@ function onAvatarInput(event: Event) {
               </div>
             </div>
 
-            <div class="bg-white rounded-2xl border border-[#E8E6E1] p-6">
+            <div class="bg-white dark:bg-[var(--el-bg-color-overlay)] rounded-2xl border border-(--color-border) p-6">
               <div class="flex flex-col sm:flex-row sm:items-center gap-5 mb-6">
                 <div class="relative group cursor-pointer" @click="avatarInput?.click()">
                   <el-avatar
@@ -323,41 +323,41 @@ function onAvatarInput(event: Event) {
                     </template>
                   </div>
                   <!-- 上传中 loading -->
-                  <div v-if="avatarUploading" class="absolute inset-0 !rounded-2xl bg-white/60 flex items-center justify-center z-10">
-                    <el-icon :size="24" class="animate-spin text-[#111]"><Operation /></el-icon>
+                  <div v-if="avatarUploading" class="absolute inset-0 !rounded-2xl bg-white dark:bg-[var(--el-bg-color-overlay)]/60 flex items-center justify-center z-10">
+                    <el-icon :size="24" class="animate-spin text-(--color-ink)"><Operation /></el-icon>
                   </div>
                   <input ref="avatarInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" class="hidden" :disabled="avatarUploading" @change="onAvatarInput" />
                 </div>
                 <div class="flex-1 min-w-0">
                   <p class="text-[16px] font-semibold truncate">{{ displayName }}</p>
-                  <p class="text-[12px] text-[#999] mt-1 truncate">{{ auth.user?.email }}</p>
+                  <p class="text-[12px] text-(--color-faint) mt-1 truncate">{{ auth.user?.email }}</p>
                   <div class="mt-3 flex flex-wrap items-center gap-2">
                     <button class="px-4 py-2 rounded-full text-[12px] font-medium bg-[#111] text-white hover:bg-[#333] cursor-pointer transition-colors" @click="avatarInput?.click()">
                       更换头像
                     </button>
-                    <button class="px-4 py-2 rounded-full text-[12px] font-medium bg-[#F3F2EE] text-[#666] hover:text-[#111] transition-colors" @click="saveProfile">保存用户名</button>
+                    <button class="px-4 py-2 rounded-full text-[12px] font-medium bg-(--color-surface) text-(--color-subtle) hover:text-(--color-ink) transition-colors" @click="saveProfile">保存用户名</button>
                   </div>
                 </div>
               </div>
 
-              <div class="space-y-4 pt-4 border-t border-[#F3F2EE]">
+              <div class="space-y-4 pt-4 border-t border-(--color-border-strong)">
                 <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                  <span class="text-[13px] text-[#666]">用户名</span>
-                  <input v-model="profileForm.username" class="w-full sm:w-64 px-3 py-2 rounded-xl bg-[#FAFAFA] border border-[#E8E6E1] text-[13px] outline-none focus:border-[#111]" />
+                  <span class="text-[13px] text-(--color-subtle)">用户名</span>
+                  <input v-model="profileForm.username" class="w-full sm:w-64 px-3 py-2 rounded-xl bg-[#FAFAFA] border border-(--color-border) text-[13px] outline-none focus:border-[#111]" />
                 </div>
                 <div class="flex items-center justify-between">
-                  <span class="text-[13px] text-[#666]">邮箱验证状态</span>
+                  <span class="text-[13px] text-(--color-subtle)">邮箱验证状态</span>
                   <span :class="['text-[12px] px-3 py-1 rounded-full font-medium', auth.user?.email_verified ? 'bg-[#E8F5E9] text-[#2E7D32]' : 'bg-[#FFF3E0] text-[#E65100]']">
                     {{ auth.user?.email_verified ? '已验证' : '未验证' }}
                   </span>
                 </div>
                 <div class="flex items-center justify-between">
-                  <span class="text-[13px] text-[#666]">上次登录 IP</span>
-                  <span class="text-[12px] text-[#999] font-mono">{{ auth.user?.last_login_ip || '—' }}</span>
+                  <span class="text-[13px] text-(--color-subtle)">上次登录 IP</span>
+                  <span class="text-[12px] text-(--color-faint) font-mono">{{ auth.user?.last_login_ip || '—' }}</span>
                 </div>
                 <div class="flex items-center justify-between">
-                  <span class="text-[13px] text-[#666]">账户 ID</span>
-                  <span class="text-[12px] text-[#999] font-mono">#{{ auth.user?.id }}</span>
+                  <span class="text-[13px] text-(--color-subtle)">账户 ID</span>
+                  <span class="text-[12px] text-(--color-faint) font-mono">#{{ auth.user?.id }}</span>
                 </div>
               </div>
             </div>
@@ -369,7 +369,7 @@ function onAvatarInput(event: Event) {
           <div class="flex items-start justify-between gap-3 mb-2">
             <div class="min-w-0">
               <h2 class="font-serif text-2xl sm:text-3xl tracking-tight">模型供应商</h2>
-              <p class="text-[12px] sm:text-[13px] text-[#999] mt-1">配置你的 AI 模型供应商，支持添加多个并切换启用</p>
+              <p class="text-[12px] sm:text-[13px] text-(--color-faint) mt-1">配置你的 AI 模型供应商，支持添加多个并切换启用</p>
             </div>
             <!-- 添加按钮：移动端仅图标 + 较窄内边距，桌面端带文字 -->
             <button
@@ -382,23 +382,23 @@ function onAvatarInput(event: Event) {
           </div>
 
           <!-- 配置说明 -->
-          <div class="mt-6 mb-8 p-4 bg-[#F3F2EE] rounded-xl border border-[#E8E6E1]/50">
-            <p class="text-[12px] text-[#777] leading-relaxed">
-              <span class="font-medium text-[#555]">提示：</span>
+          <div class="mt-6 mb-8 p-4 bg-(--color-surface) rounded-xl border border-(--color-border)/50">
+            <p class="text-[12px] text-(--color-muted) leading-relaxed">
+              <span class="font-medium text-(--color-muted)">提示：</span>
               每个供应商配置包含 LLM 和 Embedding 模型。启用后，对话与知识库检索将使用该配置。
-              同时只能启用一个供应商；如未配置任何供应商，系统将回退到 <code class="px-1 py-0.5 bg-white rounded text-[11px] font-mono">.env</code> 环境变量中的默认配置。
+              同时只能启用一个供应商；如未配置任何供应商，系统将回退到 <code class="px-1 py-0.5 bg-white dark:bg-[var(--el-bg-color-overlay)] rounded text-[11px] font-mono">.env</code> 环境变量中的默认配置。
             </p>
           </div>
 
           <!-- 供应商列表 -->
-          <div v-if="loading" class="text-center text-[13px] text-[#999] py-12">加载中…</div>
+          <div v-if="loading" class="text-center text-[13px] text-(--color-faint) py-12">加载中…</div>
 
           <div v-else-if="providers.length === 0" class="text-center py-16">
-            <div class="w-16 h-16 rounded-full bg-[#F3F2EE] flex items-center justify-center text-[#CCC] mx-auto mb-4">
+            <div class="w-16 h-16 rounded-full bg-(--color-surface) flex items-center justify-center text-[#CCC] mx-auto mb-4">
               <el-icon :size="28"><Cpu /></el-icon>
             </div>
-            <p class="text-[14px] text-[#666] font-medium mb-1">暂无供应商配置</p>
-            <p class="text-[12px] text-[#999] mb-6">添加你的第一个 AI 模型供应商以开始对话</p>
+            <p class="text-[14px] text-(--color-subtle) font-medium mb-1">暂无供应商配置</p>
+            <p class="text-[12px] text-(--color-faint) mb-6">添加你的第一个 AI 模型供应商以开始对话</p>
             <button
               @click="openCreateDialog"
               class="inline-flex items-center gap-2 px-6 py-2.5 bg-[#111] text-white rounded-full text-[13px] font-medium hover:bg-[#333] transition-all"
@@ -435,13 +435,13 @@ function onAvatarInput(event: Event) {
       <div class="space-y-5">
         <!-- 快速预设 -->
         <div v-if="!isEditing">
-          <label class="block text-[12px] text-[#999] uppercase tracking-wider mb-2">快速选择预设</label>
+          <label class="block text-[12px] text-(--color-faint) uppercase tracking-wider mb-2">快速选择预设</label>
           <div class="flex flex-wrap gap-2">
             <button
               v-for="preset in presets"
               :key="preset.provider_name"
               @click="applyPreset(preset)"
-              class="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] bg-[#F3F2EE] text-[#666] hover:bg-[#111] hover:text-white transition-all"
+              class="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] bg-(--color-surface) text-(--color-subtle) hover:bg-[#111] hover:text-white transition-all"
             >
               <el-icon :size="11"><Star /></el-icon>
               <span>{{ preset.provider_name }}</span>
@@ -451,18 +451,18 @@ function onAvatarInput(event: Event) {
 
         <!-- 供应商名称 -->
         <div>
-          <label class="block text-[12px] text-[#999] uppercase tracking-wider mb-2">供应商名称</label>
+          <label class="block text-[12px] text-(--color-faint) uppercase tracking-wider mb-2">供应商名称</label>
           <input
             v-model="form.provider_name"
             type="text"
             placeholder="如：智谱 GLM"
-            class="w-full px-4 py-2.5 bg-[#FAFAFA] border border-[#E8E6E1] rounded-xl text-[14px] outline-none focus:border-[#111] focus:bg-white transition-colors"
+            class="w-full px-4 py-2.5 bg-[#FAFAFA] border border-(--color-border) rounded-xl text-[14px] outline-none focus:border-[#111] focus:bg-white dark:bg-[var(--el-bg-color-overlay)] transition-colors"
           />
         </div>
 
         <!-- API Key -->
         <div>
-          <label class="block text-[12px] text-[#999] uppercase tracking-wider mb-2">
+          <label class="block text-[12px] text-(--color-faint) uppercase tracking-wider mb-2">
             API Key
             <span v-if="isEditing" class="text-[#BBB] normal-case tracking-normal ml-1">（留空表示不修改）</span>
           </label>
@@ -471,11 +471,11 @@ function onAvatarInput(event: Event) {
               v-model="form.llm_api_key"
               :type="showApiKey ? 'text' : 'password'"
               :placeholder="isEditing ? '••••••••（不修改请留空）' : '请输入 API Key'"
-              class="w-full px-4 py-2.5 pr-11 bg-[#FAFAFA] border border-[#E8E6E1] rounded-xl text-[14px] font-mono outline-none focus:border-[#111] focus:bg-white transition-colors"
+              class="w-full px-4 py-2.5 pr-11 bg-[#FAFAFA] border border-(--color-border) rounded-xl text-[14px] font-mono outline-none focus:border-[#111] focus:bg-white dark:bg-[var(--el-bg-color-overlay)] transition-colors"
             />
             <button
               @click="showApiKey = !showApiKey"
-              class="absolute right-3 top-1/2 -translate-y-1/2 text-[#999] hover:text-[#111] transition-colors"
+              class="absolute right-3 top-1/2 -translate-y-1/2 text-(--color-faint) hover:text-(--color-ink) transition-colors"
             >
               <el-icon :size="16"><component :is="showApiKey ? View : Hide" /></el-icon>
             </button>
@@ -484,47 +484,47 @@ function onAvatarInput(event: Event) {
 
         <!-- Base URL -->
         <div>
-          <label class="block text-[12px] text-[#999] uppercase tracking-wider mb-2">Base URL</label>
+          <label class="block text-[12px] text-(--color-faint) uppercase tracking-wider mb-2">Base URL</label>
           <input
             v-model="form.llm_base_url"
             type="text"
             placeholder="https://api.openai.com/v1"
-            class="w-full px-4 py-2.5 bg-[#FAFAFA] border border-[#E8E6E1] rounded-xl text-[14px] font-mono outline-none focus:border-[#111] focus:bg-white transition-colors"
+            class="w-full px-4 py-2.5 bg-[#FAFAFA] border border-(--color-border) rounded-xl text-[14px] font-mono outline-none focus:border-[#111] focus:bg-white dark:bg-[var(--el-bg-color-overlay)] transition-colors"
           />
         </div>
 
         <!-- 双列：LLM 模型 + Embedding 模型（移动端单列） -->
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label class="block text-[12px] text-[#999] uppercase tracking-wider mb-2">LLM 模型</label>
+            <label class="block text-[12px] text-(--color-faint) uppercase tracking-wider mb-2">LLM 模型</label>
             <input
               v-model="form.llm_model"
               type="text"
               placeholder="glm-4.5-air"
-              class="w-full px-4 py-2.5 bg-[#FAFAFA] border border-[#E8E6E1] rounded-xl text-[14px] font-mono outline-none focus:border-[#111] focus:bg-white transition-colors"
+              class="w-full px-4 py-2.5 bg-[#FAFAFA] border border-(--color-border) rounded-xl text-[14px] font-mono outline-none focus:border-[#111] focus:bg-white dark:bg-[var(--el-bg-color-overlay)] transition-colors"
             />
           </div>
           <div>
-            <label class="block text-[12px] text-[#999] uppercase tracking-wider mb-2">Embedding 模型</label>
+            <label class="block text-[12px] text-(--color-faint) uppercase tracking-wider mb-2">Embedding 模型</label>
             <input
               v-model="form.embedding_model"
               type="text"
               placeholder="embedding-3"
-              class="w-full px-4 py-2.5 bg-[#FAFAFA] border border-[#E8E6E1] rounded-xl text-[14px] font-mono outline-none focus:border-[#111] focus:bg-white transition-colors"
+              class="w-full px-4 py-2.5 bg-[#FAFAFA] border border-(--color-border) rounded-xl text-[14px] font-mono outline-none focus:border-[#111] focus:bg-white dark:bg-[var(--el-bg-color-overlay)] transition-colors"
             />
           </div>
         </div>
 
         <!-- Embedding 维度 -->
         <div>
-          <label class="block text-[12px] text-[#999] uppercase tracking-wider mb-2">Embedding 维度</label>
+          <label class="block text-[12px] text-(--color-faint) uppercase tracking-wider mb-2">Embedding 维度</label>
           <input
             v-model.number="form.embedding_dim"
             type="number"
             min="1"
             max="8192"
             placeholder="1024"
-            class="w-full px-4 py-2.5 bg-[#FAFAFA] border border-[#E8E6E1] rounded-xl text-[14px] font-mono outline-none focus:border-[#111] focus:bg-white transition-colors"
+            class="w-full px-4 py-2.5 bg-[#FAFAFA] border border-(--color-border) rounded-xl text-[14px] font-mono outline-none focus:border-[#111] focus:bg-white dark:bg-[var(--el-bg-color-overlay)] transition-colors"
           />
           <p class="text-[11px] text-[#BBB] mt-1.5">常见值：OpenAI 1536 / 智谱 2048 / 百炼 1024</p>
         </div>
@@ -534,7 +534,7 @@ function onAvatarInput(event: Event) {
         <div class="flex items-center justify-end gap-3 pt-2">
           <button
             @click="dialogVisible = false"
-            class="px-5 py-2 rounded-full text-[13px] text-[#666] hover:text-[#111] hover:bg-[#F3F2EE] transition-colors"
+            class="px-5 py-2 rounded-full text-[13px] text-(--color-subtle) hover:text-(--color-ink) hover:bg-(--color-surface) transition-colors"
           >
             取消
           </button>
