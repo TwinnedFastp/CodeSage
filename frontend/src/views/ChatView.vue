@@ -42,9 +42,11 @@ const auth = useAuthStore()
 const { isMobile, isSidebarCollapse, drawerVisible } = useResponsive()
 
 const {
-  sessions, currentSessionId, currentSession, loadingSessions,
+  currentSessionId, currentSession, loadingSessions,
+  showArchived, visibleSessions, activeSessions, archivedSessions,
   editingSessionId, editingTitle,
   loadSessions, newConversation: createSession, selectSession, deleteSession,
+  archiveSession, unarchiveSession, toggleArchived, switchToActiveView,
   startEditTitle, cancelEditTitle, confirmEditTitle,
   tryAutoGenerateTitle, applyGeneratedTitle,
 } = useSessions()
@@ -78,9 +80,9 @@ const {
   await loadSessions()
   if (currentSessionId.value) {
     await loadMessages(currentSessionId.value)
-  } else if (sessions.value.length > 0) {
-    selectSession(sessions.value[0].id)
-    await loadMessages(sessions.value[0].id)
+  } else if (activeSessions.value.length > 0) {
+    selectSession(activeSessions.value[0].id)
+    await loadMessages(activeSessions.value[0].id)
   } else {
     showWelcome('你好。我是 CodeSage，你的代码工程师。点击「New Conversation」开始我们的第一段对话。')
   }
@@ -132,8 +134,30 @@ async function onDeleteCurrent() {
   if (!currentSessionId.value) return
   const ok = await deleteSession(currentSessionId.value)
   if (ok) {
-    if (sessions.value.length > 0) {
-      await onSelectSession(sessions.value[0].id)
+    if (visibleSessions.value.length > 0) {
+      await onSelectSession(visibleSessions.value[0].id)
+    } else {
+      clearMessages()
+      showWelcome('你好。我是 CodeSage，你的代码工程师。点击「New Conversation」开始新的对话。')
+    }
+  }
+}
+
+async function onArchive(id: string) {
+  await archiveSession(id)
+}
+
+async function onUnarchive(id: string) {
+  await unarchiveSession(id)
+  // 取消归档后，loadMessages 当前会话
+  await loadMessages(id)
+}
+
+async function onDeleteSession(id: string) {
+  const ok = await deleteSession(id)
+  if (ok && currentSessionId.value === id) {
+    if (visibleSessions.value.length > 0) {
+      await onSelectSession(visibleSessions.value[0].id)
     } else {
       clearMessages()
       showWelcome('你好。我是 CodeSage，你的代码工程师。点击「New Conversation」开始新的对话。')
@@ -151,7 +175,8 @@ async function onSend() {
 }
 
 // RAG 模式切换选项（对齐 LightRAG-main 原生支持的查询模式）
-const ragModeOptions = [
+// value 类型与 useRag.ts 中 ragMode 的非 'off' 子集对齐，避免 as any 强转
+const ragModeOptions: Array<{ value: 'naive' | 'local' | 'global' | 'hybrid' | 'mix'; label: string }> = [
   { value: 'mix', label: '混合+' },
   { value: 'hybrid', label: '混合' },
   { value: 'local', label: '局部' },
@@ -236,6 +261,35 @@ function onDocFileChange(e: Event) {
   input.value = ''
 }
 
+// 粘贴图片：支持在输入框直接 Ctrl+V 粘贴剪贴板图片，自动添加为待发送附件
+function onPasteImage(e: ClipboardEvent) {
+  const items = e.clipboardData?.items
+  if (!items) return
+  let hasImage = false
+  for (const item of Array.from(items)) {
+    if (item.type.startsWith('image/')) {
+      const file = item.getAsFile()
+      if (!file) continue
+      if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+        ElMessage.warning(`不支持的图片格式: ${file.type}（支持 JPG/PNG/GIF/WebP）`)
+        continue
+      }
+      if (file.size > MAX_IMAGE_SIZE) {
+        ElMessage.warning(`图片过大（最大 10MB）`)
+        continue
+      }
+      hasImage = true
+      const reader = new FileReader()
+      reader.onload = () => {
+        addPendingImage(reader.result as string)
+      }
+      reader.readAsDataURL(file)
+    }
+  }
+  // 含图片时阻止默认行为，避免图片被当作二进制文本粘贴到输入框
+  if (hasImage) e.preventDefault()
+}
+
 const canSend = computed(() => {
   return (userInput.value.trim() || pendingImages.value.length > 0 || pendingDocuments.value.length > 0) && !isTyping.value
 })
@@ -262,11 +316,23 @@ const canSend = computed(() => {
       </div>
 
       <div class="px-5 mb-3 mt-1">
-        <!-- 顶部小图标目录：快速进入聊天 / 数据库 / 设置 -->
-        <div class="grid grid-cols-3 gap-1.5 p-1.5 rounded-xl bg-white border border-[#E8E6E1] shadow-[0_2px_12px_rgb(0,0,0,0.03)]">
-          <button class="flex flex-col items-center justify-center gap-0.5 py-1.5 rounded-lg bg-[#111] text-white" title="当前聊天">
+        <!-- 顶部小图标目录：快速进入聊天 / 归档 / 数据库 / 设置 -->
+        <div class="grid grid-cols-4 gap-1.5 p-1.5 rounded-xl bg-white border border-[#E8E6E1] shadow-[0_2px_12px_rgb(0,0,0,0.03)]">
+          <button
+            @click="switchToActiveView"
+            :class="['flex flex-col items-center justify-center gap-0.5 py-1.5 rounded-lg transition-colors', !showArchived ? 'bg-[#111] text-white' : 'text-[#666] hover:bg-[#F3F2EE] hover:text-[#111]']"
+            title="当前聊天"
+          >
             <el-icon :size="13"><ChatDotRound /></el-icon>
             <span v-if="!isSidebarCollapse" class="text-[9px] leading-tight">聊天</span>
+          </button>
+          <button
+            @click="toggleArchived"
+            :class="['flex flex-col items-center justify-center gap-0.5 py-1.5 rounded-lg transition-colors', showArchived ? 'bg-[#111] text-white' : 'text-[#666] hover:bg-[#F3F2EE] hover:text-[#111]']"
+            title="已归档会话"
+          >
+            <el-icon :size="13"><Files /></el-icon>
+            <span v-if="!isSidebarCollapse" class="text-[9px] leading-tight">归档</span>
           </button>
           <button @click="goToDatabaseAdmin" class="flex flex-col items-center justify-center gap-0.5 py-1.5 rounded-lg text-[#666] hover:bg-[#F3F2EE] hover:text-[#111] transition-colors" title="数据库管理">
             <el-icon :size="13"><Coin /></el-icon>
@@ -280,31 +346,53 @@ const canSend = computed(() => {
       </div>
 
       <div class="px-5 mb-6">
-        <button class="w-full h-11 bg-[#111111] hover:bg-[#333333] text-white rounded-full flex items-center justify-center gap-2 transition-all duration-300 shadow-sm" @click="newConversation">
+        <button
+          v-if="!showArchived"
+          class="w-full h-11 bg-[#111111] hover:bg-[#333333] text-white rounded-full flex items-center justify-center gap-2 transition-all duration-300 shadow-sm"
+          @click="newConversation"
+        >
           <el-icon><Plus /></el-icon>
           <span v-if="!isSidebarCollapse" class="text-sm font-medium">New Conversation</span>
+        </button>
+        <button
+          v-else
+          class="w-full h-11 bg-[#F3F2EE] hover:bg-[#E8E6E1] text-[#111111] border border-[#E8E6E1] rounded-full flex items-center justify-center gap-2 transition-all duration-300"
+          @click="switchToActiveView"
+        >
+          <el-icon><ChatDotRound /></el-icon>
+          <span v-if="!isSidebarCollapse" class="text-sm font-medium">返回活跃会话</span>
         </button>
       </div>
 
       <nav class="flex-1 overflow-y-auto px-3 py-2 space-y-1 custom-scrollbar">
+        <div class="flex items-center justify-between px-3 mb-2">
+          <span class="text-[11px] font-semibold text-[#999999] uppercase tracking-wider">{{ showArchived ? '已归档' : '会话' }}</span>
+          <span v-if="showArchived" class="text-[11px] text-[#999999]">{{ archivedSessions.length }} 个</span>
+        </div>
         <div v-if="loadingSessions" class="px-3 py-2 text-[12px] text-[#999999]">加载中…</div>
         <!-- 桌面端会话列表：复用 SessionListItem 组件 -->
-        <!-- 点击热区为整行，重命名按钮平时不拦截指针事件，解决"点空白处无反应" -->
+        <!-- 点击热区为整行，操作按钮平时不拦截指针事件，解决"点空白处无反应" -->
         <SessionListItem
-          v-for="chat in sessions"
+          v-for="chat in visibleSessions"
           :key="chat.id"
           :session="chat"
           :active="chat.id === currentSessionId"
           :editing="editingSessionId === chat.id"
           v-model="editingTitle"
           :collapsed="isSidebarCollapse"
+          :archived="showArchived"
           @select="onSelectSession"
           @start-edit="(id: string, title: string) => startEditTitle(id, title)"
           @confirm-edit="confirmEditTitle"
           @cancel-edit="cancelEditTitle"
           @title-keydown="(ev: KeyboardEvent, id: string) => handleTitleKeydown(ev, id)"
+          @archive="onArchive"
+          @unarchive="onUnarchive"
+          @delete="onDeleteSession"
         />
-        <div v-if="!loadingSessions && sessions.length === 0 && !isSidebarCollapse" class="px-3 py-4 text-[12px] text-[#999999] text-center">暂无会话</div>
+        <div v-if="!loadingSessions && visibleSessions.length === 0 && !isSidebarCollapse" class="px-3 py-4 text-[12px] text-[#999999] text-center">
+          {{ showArchived ? '暂无归档会话' : '暂无会话' }}
+        </div>
       </nav>
 
       <div class="p-5 border-t border-[#E8E6E1]/50 relative">
@@ -343,24 +431,60 @@ const canSend = computed(() => {
             <el-icon :size="14"><ChatDotRound /></el-icon>
           </div><span>CodeSage</span>
         </div>
-        <button class="w-full h-11 bg-[#111111] hover:bg-[#333333] text-white rounded-full flex items-center justify-center gap-2 mb-8" @click="newConversation">
+        <div class="grid grid-cols-2 gap-2 mb-6">
+          <button
+            :class="['h-10 rounded-full text-sm font-medium transition-colors flex items-center justify-center gap-1.5', !showArchived ? 'bg-[#111111] text-white' : 'bg-[#F3F2EE] text-[#111111] border border-[#E8E6E1]']"
+            @click="switchToActiveView"
+          >
+            <el-icon><ChatDotRound /></el-icon>活跃
+          </button>
+          <button
+            :class="['h-10 rounded-full text-sm font-medium transition-colors flex items-center justify-center gap-1.5', showArchived ? 'bg-[#111111] text-white' : 'bg-[#F3F2EE] text-[#111111] border border-[#E8E6E1]']"
+            @click="toggleArchived"
+          >
+            <el-icon><Files /></el-icon>归档
+          </button>
+        </div>
+        <button
+          v-if="!showArchived"
+          class="w-full h-11 bg-[#111111] hover:bg-[#333333] text-white rounded-full flex items-center justify-center gap-2 mb-8"
+          @click="newConversation"
+        >
           <el-icon><Plus /></el-icon><span class="text-sm font-medium">New Conversation</span>
         </button>
+        <button
+          v-else
+          class="w-full h-11 bg-[#F3F2EE] hover:bg-[#E8E6E1] text-[#111111] border border-[#E8E6E1] rounded-full flex items-center justify-center gap-2 mb-8"
+          @click="switchToActiveView"
+        >
+          <el-icon><ChatDotRound /></el-icon><span class="text-sm font-medium">返回活跃会话</span>
+        </button>
         <div class="flex-1 overflow-y-auto space-y-1 custom-scrollbar">
+          <div class="flex items-center justify-between px-2 mb-2">
+            <span class="text-[11px] font-semibold text-[#999999] uppercase tracking-wider">{{ showArchived ? '已归档' : '会话' }}</span>
+            <span v-if="showArchived" class="text-[11px] text-[#999999]">{{ archivedSessions.length }} 个</span>
+          </div>
           <!-- 移动端抽屉会话列表：复用 SessionListItem 组件（不传 collapsed） -->
           <SessionListItem
-            v-for="chat in sessions"
+            v-for="chat in visibleSessions"
             :key="chat.id"
             :session="chat"
             :active="chat.id === currentSessionId"
             :editing="editingSessionId === chat.id"
             v-model="editingTitle"
+            :archived="showArchived"
             @select="onSelectSession"
             @start-edit="(id: string, title: string) => startEditTitle(id, title)"
             @confirm-edit="confirmEditTitle"
             @cancel-edit="cancelEditTitle"
             @title-keydown="(ev: KeyboardEvent, id: string) => handleTitleKeydown(ev, id)"
+            @archive="onArchive"
+            @unarchive="onUnarchive"
+            @delete="onDeleteSession"
           />
+          <div v-if="!loadingSessions && visibleSessions.length === 0" class="px-3 py-4 text-[12px] text-[#999999] text-center">
+            {{ showArchived ? '暂无归档会话' : '暂无会话' }}
+          </div>
         </div>
         <div class="pt-4 border-t border-[#E8E6E1]/50 space-y-1">
           <button class="w-full flex items-center gap-3 px-2 py-2 text-[13px] text-[#444444] hover:text-[#111111]" @click="router.push('/settings')">
@@ -382,6 +506,10 @@ const canSend = computed(() => {
         <div class="flex items-center gap-4 min-w-0">
           <button v-if="isMobile" @click="drawerVisible = true" class="p-2 -ml-2 text-[#555555]"><el-icon :size="22"><Operation /></el-icon></button>
           <h2 class="font-serif text-xl tracking-tight text-[#111111]/80 truncate">{{ currentSession?.title || 'Current Session' }}</h2>
+          <span
+            v-if="currentSession?.is_archived"
+            class="shrink-0 px-2 py-0.5 rounded-full text-[10px] font-medium bg-[#E8E6E1] text-[#666666]"
+          >已归档</span>
         </div>
         <div class="flex items-center gap-3 text-[#777777]">
           <div class="flex items-center bg-[#F3F2EE] rounded-full p-0.5 border border-[#E8E6E1]" title="回复渲染模式">
@@ -394,6 +522,11 @@ const canSend = computed(() => {
               :class="['px-3 py-1 rounded-full text-[12px] transition-all', renderMode === 'component' ? 'bg-[#111111] text-white font-medium' : 'text-[#777777] hover:text-[#111111]']"
             >生成式</button>
           </div>
+          <button
+            v-if="currentSession?.is_archived"
+            class="hover:text-[#111111] transition-colors text-[12px] px-3 py-1.5 rounded-full hover:bg-[#F3F2EE]"
+            @click="currentSessionId && onUnarchive(currentSessionId)"
+          >取消归档</button>
           <button v-if="currentSessionId" class="hover:text-[#111111] transition-colors text-[12px] px-3 py-1.5 rounded-full hover:bg-[#F3F2EE]" @click="onDeleteCurrent">删除会话</button>
           <button
             v-if="ragReady"
@@ -457,7 +590,7 @@ const canSend = computed(() => {
                 <button
                   v-for="opt in ragModeOptions"
                   :key="opt.value"
-                  @click="ragMode = opt.value as any"
+                  @click="ragMode = opt.value"
                   :class="['px-2.5 py-1 rounded-full text-[11px] transition-all', ragMode === opt.value ? 'bg-[#E8E6E1] text-[#111] font-medium' : 'text-[#999] hover:text-[#555]']"
                 >{{ opt.label }}</button>
               </div>
@@ -498,6 +631,7 @@ const canSend = computed(() => {
               class="w-full max-h-[200px] bg-transparent border-none outline-none resize-none py-3 px-4 text-[15px] leading-relaxed text-[#111111] placeholder:text-[#AAAAAA] custom-scrollbar"
               @input="adjustTextareaHeight"
               @keydown.enter.prevent="onSend"
+              @paste="onPasteImage"
             ></textarea>
             <button @click="onSend" :disabled="!canSend" class="absolute right-3 bottom-3 w-10 h-10 rounded-full flex items-center justify-center transition-all duration-300 disabled:opacity-30 disabled:cursor-not-allowed text-white" :class="canSend ? 'bg-[#111111] hover:bg-[#333333]' : 'bg-[#D1CFCA]'">
               <el-icon :size="16"><Promotion /></el-icon>

@@ -236,14 +236,23 @@ async def _streaming_with_persistence(
     attachments: list[dict] | None = None,
 ):
     """
-    流式生成 + 落库 + 保底标题：
+    流式生成 + 落库 + 保底标题 + 断连保护 + Redis 中间态缓存：
     1. 用户消息先落库
     2. 读取历史（已含本轮 user 消息）
     3. LightRAG 检索知识（仅当 use_rag=true 时，用户显式开启 RAG 模式）
-    4. 流式输出 LLM 回复
-    5. assistant 回复落库
-    6. 保底触发标题生成
+    4. 初始化 Redis 流式缓存（刷新/断连恢复用）
+    5. 流式输出 LLM 回复：每个 chunk 增量写 Redis + 推前端（带断连保护）
+    6. assistant 回复落库（无论客户端是否断连都落库，保证不丢）
+    7. 清理 Redis 缓存 + 保底触发标题生成
+
+    断连保护：客户端断开时捕获 GeneratorExit，标记 client_disconnected，
+    后端继续从 LLM 拉取剩余 chunk 并写入 Redis / 落库，已生成内容不丢失。
+    用户刷新页面后可通过 GET /chat/streaming/{session_id} 从 Redis 恢复进行中的内容。
     """
+    from backend.core.streaming_cache import (
+        init_streaming, append_chunk, finalize_streaming,
+    )
+
     # 1. 用户消息落库
     await _persist_message(db, user_id, session_id, "user", user_message, attachments=attachments)
 
@@ -266,32 +275,61 @@ async def _streaming_with_persistence(
         else:
             yield f"data: {json.dumps({'rag_status': 'done'}, ensure_ascii=False)}\n\n"
 
-    # 4 & 5. 流式生成 + 收集完整回复
+    # 4. 初始化 Redis 流式缓存（用于刷新/断连恢复；Redis 不可用时退化为纯内存流）
+    stream_token = None
+    try:
+        stream_token = await init_streaming(session_id, role="assistant", render_mode="text")
+    except Exception:
+        logger.warning("初始化流式缓存失败，退化为纯内存流 session_id=%s", session_id, exc_info=True)
+
+    # 5. 流式生成：增量写 Redis + 推前端（带断连保护）
     full_reply_parts: list[str] = []
+    client_disconnected = False
     async for chunk in ai_response_generator(history, user_message, provider_config, knowledge, use_rag, attachments):
+        # 解析 chunk 提取 content，用于 Redis 缓存和最终落库
         if chunk.startswith("data: ") and chunk.strip() != "data: [DONE]":
             data = chunk[6:].strip()
             try:
                 parsed = json.loads(data)
-                if parsed.get("content"):
-                    full_reply_parts.append(parsed["content"])
+                piece = parsed.get("content")
+                if piece:
+                    full_reply_parts.append(piece)
+                    # 增量写入 Redis（失败不阻断，退化为纯内存流仍能落库）
+                    if stream_token:
+                        await append_chunk(session_id, stream_token, piece)
             except Exception:
                 pass
-        yield chunk
+        # 推给前端（断连后跳过 yield，后端继续生成并缓存）
+        if not client_disconnected:
+            try:
+                yield chunk
+            except (GeneratorExit, ConnectionError, OSError):
+                client_disconnected = True
+                logger.info("客户端断开连接，后端继续生成并缓存 session_id=%s", session_id)
 
-    # 5. assistant 回复落库
+    # 6. assistant 回复落库（无论是否断连都落库，保证已生成内容不丢失）
     full_reply = "".join(full_reply_parts)
     if full_reply:
         await _persist_message(db, user_id, session_id, "assistant", full_reply)
 
-    # 6. 保底标题生成，并通过 SSE 把新标题推给前端
+    # 7. 清理 Redis 缓存（内容已落库 PG，临时态可释放）
+    if stream_token:
+        try:
+            await finalize_streaming(session_id, stream_token)
+        except Exception:
+            logger.debug("清理流式缓存失败 session_id=%s", session_id, exc_info=True)
+
+    # 8. 保底标题生成（客户端断开时仍执行落库，仅跳过 SSE 推送）
     try:
         session = await conversation_service.get_session(db, user_id, UUID(session_id))
         new_title = await _maybe_auto_title(
             db, user_id, session_id, session.title, provider_config,
         )
-        if new_title:
-            yield f"data: {json.dumps({'title': new_title, 'session_id': session_id}, ensure_ascii=False)}\n\n"
+        if new_title and not client_disconnected:
+            try:
+                yield f"data: {json.dumps({'title': new_title, 'session_id': session_id}, ensure_ascii=False)}\n\n"
+            except (GeneratorExit, ConnectionError, OSError):
+                pass
     except Exception:
         logger.debug("读取会话标题失败，跳过保底生成 session_id=%s", session_id)
 
@@ -594,3 +632,24 @@ async def chat_streaming(
             yield chunk
 
     return StreamingResponse(wrapped(), media_type="text/event-stream")
+
+
+@router.get("/streaming/{session_id}")
+async def get_active_streaming(
+    session_id: UUID,
+    user: User = Depends(get_current_user),
+):
+    """
+    查询某会话下所有"进行中"的流式消息（从 Redis 读取）。
+
+    使用场景：用户刷新页面 / 重新进入页面后调用，恢复未完成的 AI 回复内容。
+    - 流式正常结束后后端清理 Redis key，此处返回空列表（历史已落库 PG，由 listMessages 拉取）
+    - 流式仍在进行时，返回已累加的内容，前端可据此显示"生成中"状态并轮询更新
+    - 流式因异常中断（key 未及时清理），30 分钟内仍可恢复，超时自动清理
+
+    前端轮询约定：当返回的 items 数量减少（某条 stream_token 消失），说明该条流式已结束，
+    应触发 listMessages 刷新历史以获取已落库的完整内容。
+    """
+    from backend.core.streaming_cache import list_active_streaming
+    items = await list_active_streaming(str(session_id))
+    return {"items": items, "count": len(items)}
