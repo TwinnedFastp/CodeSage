@@ -17,6 +17,7 @@ class SessionCreate(BaseModel):
 class SessionUpdate(BaseModel):
     title: Optional[str] = None
     summary: Optional[str] = None
+    is_archived: Optional[bool] = None
 
 
 class SessionOut(BaseModel):
@@ -25,6 +26,8 @@ class SessionOut(BaseModel):
     title: Optional[str]
     summary: Optional[str]
     summary_generated_at: Optional[datetime]
+    is_archived: bool
+    archived_at: Optional[datetime]
     created_at: datetime
     updated_at: datetime
 

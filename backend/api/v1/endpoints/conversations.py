@@ -43,10 +43,11 @@ async def create_session(
 
 @router.get("/sessions", response_model=list[SessionOut])
 async def list_sessions(
+    archived: bool = Query(False, description="是否只返回已归档会话"),
     limit: int = Query(50, le=200), offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user),
 ):
-    return await conversation_service.list_sessions(db, user.id, limit, offset)
+    return await conversation_service.list_sessions(db, user.id, limit, offset, archived)
 
 
 @router.get("/sessions/{session_id}", response_model=SessionOut)
@@ -67,8 +68,31 @@ async def update_session(
 ):
     try:
         return await conversation_service.update_session(
-            db, user.id, session_id, payload.title, payload.summary
+            db, user.id, session_id,
+            payload.title, payload.summary, payload.is_archived,
         )
+    except conversation_service.ConversationError as exc:
+        return _err(exc)
+
+
+@router.post("/sessions/{session_id}/archive", response_model=SessionOut)
+async def archive_session(
+    session_id: UUID,
+    db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user),
+):
+    try:
+        return await conversation_service.archive_session(db, user.id, session_id)
+    except conversation_service.ConversationError as exc:
+        return _err(exc)
+
+
+@router.post("/sessions/{session_id}/unarchive", response_model=SessionOut)
+async def unarchive_session(
+    session_id: UUID,
+    db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user),
+):
+    try:
+        return await conversation_service.unarchive_session(db, user.id, session_id)
     except conversation_service.ConversationError as exc:
         return _err(exc)
 

@@ -71,10 +71,13 @@ async def get_session(db: AsyncSession, user_id: int, session_id: UUID) -> ChatS
     return session
 
 
-async def list_sessions(db: AsyncSession, user_id: int, limit: int = 50, offset: int = 0) -> list[ChatSession]:
+async def list_sessions(
+    db: AsyncSession, user_id: int, limit: int = 50, offset: int = 0,
+    archived: bool = False,
+) -> list[ChatSession]:
     result = await db.execute(
         select(ChatSession)
-        .where(ChatSession.user_id == user_id)
+        .where(ChatSession.user_id == user_id, ChatSession.is_archived == archived)
         .order_by(ChatSession.created_at.desc())
         .limit(limit).offset(offset)
     )
@@ -84,6 +87,7 @@ async def list_sessions(db: AsyncSession, user_id: int, limit: int = 50, offset:
 async def update_session(
     db: AsyncSession, user_id: int, session_id: UUID,
     title: Optional[str] = None, summary: Optional[str] = None,
+    is_archived: Optional[bool] = None,
 ) -> ChatSession:
     session = await get_session(db, user_id, session_id)
     if title is not None:
@@ -91,6 +95,9 @@ async def update_session(
     if summary is not None:
         session.summary = summary
         session.summary_generated_at = datetime.now(timezone.utc)
+    if is_archived is not None:
+        session.is_archived = is_archived
+        session.archived_at = datetime.now(timezone.utc) if is_archived else None
     try:
         await db.commit()
     except SQLAlchemyError:
@@ -108,6 +115,14 @@ async def delete_session(db: AsyncSession, user_id: int, session_id: UUID) -> No
     except SQLAlchemyError:
         await db.rollback()
         raise ConversationError("删除会话失败", status=500)
+
+
+async def archive_session(db: AsyncSession, user_id: int, session_id: UUID) -> ChatSession:
+    return await update_session(db, user_id, session_id, is_archived=True)
+
+
+async def unarchive_session(db: AsyncSession, user_id: int, session_id: UUID) -> ChatSession:
+    return await update_session(db, user_id, session_id, is_archived=False)
 
 
 async def generate_title(

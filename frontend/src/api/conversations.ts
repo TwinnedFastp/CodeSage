@@ -7,8 +7,8 @@ export async function createSession(title?: string): Promise<ChatSession> {
   return data
 }
 
-export async function listSessions(limit = 50, offset = 0): Promise<ChatSession[]> {
-  const { data } = await request.get('/conversations/sessions', { params: { limit, offset } })
+export async function listSessions(limit = 50, offset = 0, archived = false): Promise<ChatSession[]> {
+  const { data } = await request.get('/conversations/sessions', { params: { limit, offset, archived } })
   return data
 }
 
@@ -17,8 +17,18 @@ export async function getSession(id: string): Promise<ChatSession> {
   return data
 }
 
-export async function updateSession(id: string, payload: { title?: string; summary?: string }): Promise<ChatSession> {
+export async function updateSession(id: string, payload: { title?: string; summary?: string; is_archived?: boolean }): Promise<ChatSession> {
   const { data } = await request.patch(`/conversations/sessions/${id}`, payload)
+  return data
+}
+
+export async function archiveSession(id: string): Promise<ChatSession> {
+  const { data } = await request.post(`/conversations/sessions/${id}/archive`)
+  return data
+}
+
+export async function unarchiveSession(id: string): Promise<ChatSession> {
+  const { data } = await request.post(`/conversations/sessions/${id}/unarchive`)
   return data
 }
 

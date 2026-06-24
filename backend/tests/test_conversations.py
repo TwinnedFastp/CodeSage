@@ -205,7 +205,66 @@ async def test_task_status_flow(client):
 # 多用户数据隔离
 # ------------------------------------------------------------------
 @pytest.mark.asyncio
-async def test_session_isolation_between_users(client):
+async def test_archive_session_and_list_filter(client):
+    access, _ = await register_verify_login(client, unique_email())
+    H = auth_headers(access)
+
+    # 创建两个会话
+    r1 = await client.post("/api/v1/conversations/sessions", json={"title": "活跃会话"}, headers=H)
+    r2 = await client.post("/api/v1/conversations/sessions", json={"title": "待归档"}, headers=H)
+    active_id = r1.json()["id"]
+    archive_id = r2.json()["id"]
+
+    # 归档其中一个
+    r = await client.post(f"/api/v1/conversations/sessions/{archive_id}/archive", headers=H)
+    assert r.status_code == 200
+    assert r.json()["is_archived"] is True
+    assert r.json()["archived_at"] is not None
+
+    # 默认列表只有活跃会话
+    r = await client.get("/api/v1/conversations/sessions", headers=H)
+    assert r.status_code == 200
+    sessions = r.json()
+    assert len(sessions) == 1
+    assert sessions[0]["id"] == active_id
+
+    # 已归档列表只有归档会话
+    r = await client.get("/api/v1/conversations/sessions?archived=true", headers=H)
+    assert r.status_code == 200
+    archived = r.json()
+    assert len(archived) == 1
+    assert archived[0]["id"] == archive_id
+
+    # 取消归档
+    r = await client.post(f"/api/v1/conversations/sessions/{archive_id}/unarchive", headers=H)
+    assert r.status_code == 200
+    assert r.json()["is_archived"] is False
+
+    # 默认列表恢复两个
+    r = await client.get("/api/v1/conversations/sessions", headers=H)
+    assert len(r.json()) == 2
+
+
+@pytest.mark.asyncio
+async def test_archive_session_isolation_between_users(client):
+    a, b = await _two_users(client)
+    Ha, Hb = auth_headers(a), auth_headers(b)
+
+    r = await client.post("/api/v1/conversations/sessions", json={"title": "A的会话"}, headers=Ha)
+    sid = r.json()["id"]
+
+    # B 无法归档 A 的会话
+    r = await client.post(f"/api/v1/conversations/sessions/{sid}/archive", headers=Hb)
+    assert r.status_code == 404
+
+    # A 可以归档
+    r = await client.post(f"/api/v1/conversations/sessions/{sid}/archive", headers=Ha)
+    assert r.status_code == 200
+
+    # B 的归档列表为空
+    r = await client.get("/api/v1/conversations/sessions?archived=true", headers=Hb)
+    assert r.json() == []
+
     """用户 A 的会话，用户 B 不可见/不可操作"""
     a, b = await _two_users(client)
     Ha, Hb = auth_headers(a), auth_headers(b)

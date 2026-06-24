@@ -72,6 +72,9 @@ async def init_db() -> None:
         await conn.execute(text("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS render_mode VARCHAR(16) NOT NULL DEFAULT 'text'"))
         # chat_messages 加 attachments 列：存储图片和文档附件（JSONB）
         await conn.execute(text("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS attachments JSONB"))
+        # chat_sessions 加归档字段
+        await conn.execute(text("ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAULT FALSE"))
+        await conn.execute(text("ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP WITH TIME ZONE"))
         logger.info("表结构创建完成（已存在的表跳过）")
 
 

@@ -22,6 +22,8 @@ export interface ChatSession {
   title: string | null
   summary: string | null
   summary_generated_at: string | null
+  is_archived: boolean
+  archived_at: string | null
   created_at: string
   updated_at: string
 }
