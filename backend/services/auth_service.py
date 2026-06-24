@@ -191,10 +191,10 @@ async def login(email: str, password: str, client_ip: Optional[str], db: AsyncSe
             await db.rollback()
             logger.exception("写登录日志失败")
 
-    # 账号不存在：统一返回"邮箱或密码错误"以防账号枚举
+    # 账号不存在：明确提示用户需要注册
     if user is None:
         await _log_login(False, "user_not_found")
-        raise AuthError("邮箱或密码错误", code="invalid_credentials", status=401)
+        raise AuthError("该邮箱尚未注册，请先注册", code="user_not_found", status=401)
 
     # 账号锁定检查
     if user.locked_until and user.locked_until > now:
