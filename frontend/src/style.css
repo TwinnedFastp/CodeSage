@@ -22,6 +22,39 @@
   --color-subtle: #777777;       /* 辅助文字 */
   --color-faint: #999999;        /* 占位/提示 */
   --color-faintest: #AAAAAA;     /* placeholder */
+  --color-accent: #3B82F6;     /* 强调色（生成式 UI 提示） */
+  --color-btn-primary-text: #FAFAFA; /* 主按钮文字色（近白） */
+}
+
+/* =========================================================
+   暗色主题变量覆盖
+   ========================================================= */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --color-canvas: #0f0f0f;
+  --color-surface: #1a1a1a;
+  --color-surface-soft: #252525;
+  --color-border: #2a2a2a;
+  --color-border-strong: #3a3a3a;
+  --color-ink: #e8e6e1;
+  --color-ink-soft: #c0beb9;
+  --color-muted: #8a8883;
+  --color-subtle: #6a6863;
+  --color-faint: #4a4843;
+  --color-faintest: #3a3833;
+  --color-btn-primary-text: #0f0f0f;
+}
+
+/* =========================================================
+   主题切换过渡（仅切换瞬间生效，不常驻）
+   ========================================================= */
+.theme-transition,
+.theme-transition *,
+.theme-transition *::before,
+.theme-transition *::after {
+  transition: background-color 0.3s ease, color 0.3s ease,
+    border-color 0.3s ease, box-shadow 0.3s ease,
+    fill 0.3s ease, stroke 0.3s ease !important;
 }
 
 :root {
@@ -119,4 +152,51 @@ body {
 }
 .el-input__inner {
   font-family: var(--font-sans) !important;
+}
+
+/* =========================================================
+   Markdown 渲染正文样式（v-html 注入）
+   ========================================================= */
+.markdown-body {
+  color: var(--color-ink);
+  line-height: 1.7;
+}
+.markdown-body :deep(pre) {
+  background: var(--color-surface);
+  border-radius: 12px;
+  padding: 1rem 1.25rem;
+  overflow-x: auto;
+  margin: 0.75rem 0;
+}
+.markdown-body :deep(code) {
+  background: var(--color-surface-soft);
+  padding: 0.15rem 0.35rem;
+  border-radius: 6px;
+  font-size: 0.9em;
+}
+.markdown-body :deep(pre) code {
+  background: transparent;
+  padding: 0;
+}
+.markdown-body :deep(a) {
+  color: var(--color-accent);
+  text-decoration: none;
+}
+.markdown-body :deep(a:hover) {
+  text-decoration: underline;
+}
+.markdown-body :deep(table) {
+  border-collapse: collapse;
+  margin: 0.75rem 0;
+}
+.markdown-body :deep(th),
+.markdown-body :deep(td) {
+  border: 1px solid var(--color-border);
+  padding: 0.5rem 0.75rem;
+}
+.markdown-body :deep(blockquote) {
+  border-left: 3px solid var(--color-border-strong);
+  margin: 0.75rem 0;
+  padding-left: 1rem;
+  color: var(--color-muted);
 }

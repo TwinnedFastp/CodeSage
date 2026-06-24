@@ -48,20 +48,20 @@ function onArchiveClick() {
   <div
     :class="[
       'group flex items-center gap-3 px-3 py-3 rounded-lg transition-colors cursor-pointer select-none',
-      active ? 'bg-[#E8E6E1]' : 'hover:bg-[#E8E6E1]',
-      editing ? 'ring-1 ring-[#111111]/20' : '',
+      active ? 'bg-(--color-border)' : 'hover:bg-(--color-border)',
+      editing ? 'ring-1 ring-(--color-ink)/20' : '',
     ]"
     @click="emit('select', session.id)"
   >
     <!-- 选中状态指示圆点 -->
-    <div :class="['w-1.5 h-1.5 rounded-full shrink-0', active ? 'bg-[#111111]' : 'bg-[#D1CFCA]']"></div>
+    <div :class="['w-1.5 h-1.5 rounded-full shrink-0', active ? 'bg-(--color-ink)' : 'bg-(--color-border-strong)']"></div>
 
     <!-- 编辑态：内联输入框 -->
     <template v-if="editing">
       <input
         :value="modelValue"
         @input="onInput"
-        class="session-title-input flex-1 min-w-0 bg-white border border-[#D1CFCA] rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-[#111111] outline-none focus:border-[#111111] transition-colors"
+        class="session-title-input flex-1 min-w-0 bg-(--color-surface-soft) border border-(--color-border-strong) rounded-lg px-2.5 py-1.5 text-[13px] font-medium text-(--color-ink) outline-none focus:border-(--color-ink) transition-colors"
         maxlength="60"
         @keydown="emit('title-keydown', $event, session.id)"
         @blur="emit('confirm-edit', session.id)"
@@ -73,7 +73,7 @@ function onArchiveClick() {
       <span
         v-if="!collapsed"
         class="flex-1 min-w-0 truncate text-[13px] font-medium"
-        :class="active ? 'text-[#111111]' : 'text-[#444444] group-hover:text-[#111111]'"
+        :class="active ? 'text-(--color-ink)' : 'text-(--color-muted) group-hover:text-(--color-ink)'"
         @dblclick.stop="emit('start-edit', session.id, session.title || '')"
       >{{ session.title || '未命名会话' }}</span>
       <!--
@@ -85,21 +85,21 @@ function onArchiveClick() {
         class="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto transition-opacity"
       >
         <button
-          class="p-1.5 rounded-md hover:bg-[#EAE8E0] transition-all text-[#999999] hover:text-[#111111]"
+          class="p-1.5 rounded-md hover:bg-(--color-surface-soft) transition-all text-(--color-faint) hover:text-(--color-ink)"
           :title="archived || session.is_archived ? '取消归档' : '归档会话'"
           @click.stop="onArchiveClick"
         >
           <el-icon :size="12"><component :is="archived || session.is_archived ? FolderRemove : FolderAdd" /></el-icon>
         </button>
         <button
-          class="p-1.5 rounded-md hover:bg-[#EAE8E0] transition-all text-[#999999] hover:text-[#111111]"
+          class="p-1.5 rounded-md hover:bg-(--color-surface-soft) transition-all text-(--color-faint) hover:text-(--color-ink)"
           title="重命名"
           @click.stop="emit('start-edit', session.id, session.title || '')"
         >
           <el-icon :size="12"><Edit /></el-icon>
         </button>
         <button
-          class="p-1.5 rounded-md hover:bg-[#EAE8E0] transition-all text-[#999999] hover:text-[#D9534F]"
+          class="p-1.5 rounded-md hover:bg-(--color-surface-soft) transition-all text-(--color-faint) hover:text-[#D9534F]"
           title="删除会话"
           @click.stop="emit('delete', session.id)"
         >
