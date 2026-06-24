@@ -19,6 +19,7 @@ import KnowledgePanel from '@/components/KnowledgePanel.vue'
 // 复用单条会话项组件，避免桌面端/移动端两处列表重复代码
 import SessionListItem from '@/components/SessionListItem.vue'
 import GenerativePanel from '@/features/generative-ui/GenerativePanel.vue'
+import ThinkingBlock from '@/features/generative-ui/components/ThinkingBlock.vue'
 import { marked } from 'marked'
 
 // ---- Markdown 渲染增强：代码块卡片 + 表格单元格滚动 ----
@@ -665,7 +666,7 @@ const canSend = computed(() => {
               <div class="flex items-center gap-2">
                 <span class="font-medium text-[13px]">{{ p.provider_name }}</span>
                 <span class="text-[11px] text-(--color-subtle) font-mono">{{ p.llm_model }}</span>
-                <span v-if="p.is_enabled" class="text-[9px] px-1.5 py-0.5 rounded-full bg-[#EFF6FF] text-[#2563EB]">启用</span>
+                <span v-if="p.is_enabled" class="text-[9px] px-1.5 py-0.5 rounded-full bg-(--color-accent)/12 text-(--color-accent)">启用</span>
               </div>
             </el-option>
           </el-select>
@@ -710,6 +711,13 @@ const canSend = computed(() => {
                   </div>
                 </template>
               </div>
+              <!-- AI 思考过程（可折叠，复用生成式页面的 ThinkingBlock） -->
+              <ThinkingBlock
+                v-if="msg.role === 'assistant' && msg.thinkingRaw"
+                :raw-text="msg.thinkingRaw"
+                :done="msg.thinkingDone ?? false"
+                class="mb-3"
+              />
               <!-- Markdown 富文本渲染 -->
               <div class="markdown-body" v-html="renderMarkdown(msg.content)"></div>
               <div v-if="isTyping && msg.id === messages[messages.length-1].id && msg.role === 'assistant'" class="inline-block w-2 h-4 bg-(--color-ink) animate-pulse-cursor ml-1 align-middle"></div>

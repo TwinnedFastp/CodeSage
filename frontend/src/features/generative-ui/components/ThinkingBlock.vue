@@ -51,14 +51,14 @@ watch(
 </script>
 
 <template>
-  <div class="rounded-2xl border border-[#E8E6E1] bg-[#FAFAFA] overflow-hidden transition-all duration-300">
+  <div class="rounded-2xl border border-(--color-border) bg-(--color-surface) overflow-hidden transition-all duration-300">
     <!-- 头部：可点击折叠 -->
     <button
-      class="w-full flex items-center gap-3 px-5 py-4 text-left hover:bg-[#F3F2EE] transition-colors"
+      class="w-full flex items-center gap-3 px-5 py-4 text-left cursor-pointer hover:bg-(--color-surface-soft) transition-colors"
       @click="toggle"
     >
       <!-- 旋转动画的箭头 -->
-      <el-icon :size="14" class="text-[#777] transition-transform duration-300" :class="expanded ? 'rotate-90' : ''">
+      <el-icon :size="14" class="text-(--color-subtle) transition-transform duration-300" :class="expanded ? 'rotate-90' : ''">
         <ArrowRight />
       </el-icon>
 
@@ -66,19 +66,19 @@ watch(
       <div class="flex items-center gap-2.5 flex-1 min-w-0">
         <div
           class="w-6 h-6 rounded-full flex items-center justify-center shrink-0 transition-all duration-300"
-          :class="done ? 'bg-[#111] text-white' : 'bg-[#111]/8 text-[#111]'"
+          :class="done ? 'bg-(--color-ink) text-(--color-btn-primary-text)' : 'bg-(--color-ink)/8 text-(--color-ink)'"
         >
           <el-icon :size="12" :class="done ? '' : 'animate-spin'">
             <Loading />
           </el-icon>
         </div>
-        <span class="text-[13px] font-medium text-[#111] truncate">
+        <span class="text-[13px] font-medium text-(--color-ink) truncate">
           {{ done ? '思考完成' : 'AI 正在思考中…' }}
         </span>
       </div>
 
       <!-- 字数统计 -->
-      <span class="text-[11px] text-[#999] tabular-nums shrink-0">
+      <span class="text-[11px] text-(--color-faint) tabular-nums shrink-0">
         {{ charCount }} 字
       </span>
     </button>
@@ -95,9 +95,9 @@ watch(
       <div v-show="expanded" class="overflow-hidden">
         <div
           ref="bodyRef"
-          class="px-5 pb-4 pt-1 max-h-[400px] overflow-y-auto custom-scrollbar border-t border-[#E8E6E1]/50"
+          class="px-5 pb-4 pt-1 max-h-[400px] overflow-y-auto custom-scrollbar border-t border-(--color-border)/50"
         >
-          <pre class="text-[11px] leading-relaxed text-[#666] font-mono whitespace-pre-wrap break-all">{{ displayText || '等待生成…' }}</pre>
+          <pre class="text-[11px] leading-relaxed text-(--color-muted) font-mono whitespace-pre-wrap break-all">{{ displayText || '等待生成…' }}</pre>
         </div>
       </div>
     </transition>

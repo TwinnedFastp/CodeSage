@@ -5,9 +5,9 @@ defineProps<{ props: Record<string, any> }>()
 <template>
   <component
     :is="props.ordered ? 'ol' : 'ul'"
-    class="space-y-1.5 pl-5 text-[15px] leading-relaxed text-[#111111]"
+    class="space-y-1.5 pl-5 text-[15px] leading-relaxed text-(--color-ink)"
     :class="props.ordered ? 'list-decimal' : 'list-disc'"
   >
-    <li v-for="(item, i) in (props.items || [])" :key="i" class="marker:text-[#999]">{{ item }}</li>
+    <li v-for="(item, i) in (props.items || [])" :key="i" class="marker:text-(--color-faint)">{{ item }}</li>
   </component>
 </template>
