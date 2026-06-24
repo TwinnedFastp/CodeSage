@@ -37,15 +37,17 @@ function onRowClick(row: CellValue[], index: number) {
 
 <template>
   <div class="table-block-wrapper">
-    <div class="overflow-x-auto rounded-xl border border-[#E8E6E1] custom-scrollbar">
-      <table class="w-full text-[13px] border-collapse interactive-table">
+    <div class="overflow-x-auto rounded-xl border border-(--color-border) custom-scrollbar">
+      <table class="w-full text-[13px] border-collapse interactive-table table-fixed">
         <thead>
-          <tr class="bg-[#F3F2EE]">
+          <tr class="bg-(--color-surface-soft)">
             <th
               v-for="(h, i) in (props.props.headers || [])"
               :key="i"
-              class="text-left px-4 py-2.5 font-serif font-medium text-[#111111] border-b border-[#E8E6E1]"
-            >{{ h }}</th>
+              class="text-left font-serif font-medium text-(--color-ink) border-b border-(--color-border) p-0 align-top"
+            >
+              <div class="table-cell-content table-cell-content-header">{{ h }}</div>
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -59,17 +61,21 @@ function onRowClick(row: CellValue[], index: number) {
             <td
               v-for="(cell, ci) in row"
               :key="ci"
-              class="px-4 py-2.5 border-b border-[#E8E6E1] text-[#333333] whitespace-pre-wrap align-top"
+              class="border-b border-(--color-border) text-(--color-ink-soft) align-top p-0"
               :class="{ 'clickable-cell': typeof cell === 'object' && cell !== null && (cell as CellData)?.html }"
             >
               <!-- 支持对象类型的单元格（带 HTML 和标题） -->
               <template v-if="typeof cell === 'object' && cell !== null && (cell as CellData).html">
-                <span class="cell-with-action">
-                  {{ (cell as CellData).label || (cell as CellData).value || '' }}
-                  <el-icon class="action-icon"><FullScreen /></el-icon>
-                </span>
+                <div class="table-cell-content">
+                  <span class="cell-with-action">
+                    {{ (cell as CellData).label || (cell as CellData).value || '' }}
+                    <el-icon class="action-icon"><FullScreen /></el-icon>
+                  </span>
+                </div>
               </template>
-              <template v-else>{{ cell }}</template>
+              <template v-else>
+                <div class="table-cell-content">{{ cell }}</div>
+              </template>
             </td>
           </tr>
         </tbody>
@@ -80,12 +86,13 @@ function onRowClick(row: CellValue[], index: number) {
 
 <style scoped>
 .table-block-wrapper {
-  background: white;
+  background: var(--color-surface);
   border-radius: 12px;
 }
 
 .interactive-table {
   cursor: default;
+  table-layout: fixed;
 }
 
 .table-row {
@@ -93,7 +100,7 @@ function onRowClick(row: CellValue[], index: number) {
 }
 
 .table-row:hover {
-  background: #FAFAFA;
+  background: var(--color-surface-soft);
 }
 
 /* 所有行可点击 */
@@ -102,7 +109,7 @@ function onRowClick(row: CellValue[], index: number) {
 }
 
 .table-row.interactive-row:hover {
-  background: #F0F7FF;
+  background: color-mix(in srgb, var(--color-accent) 8%, var(--color-surface-soft));
 }
 
 /* 可点击的行 */
@@ -111,8 +118,8 @@ function onRowClick(row: CellValue[], index: number) {
 }
 
 .table-row.has-action:hover {
-  background: #F0F7FF;
-  box-shadow: inset 0 0 0 2px #3B82F620;
+  background: color-mix(in srgb, var(--color-accent) 8%, var(--color-surface-soft));
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--color-accent) 25%, transparent);
 }
 
 /* 可点击的单元格 */
@@ -124,7 +131,7 @@ function onRowClick(row: CellValue[], index: number) {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: #2563EB;
+  color: var(--color-accent);
   font-weight: 500;
 }
 
@@ -138,20 +145,37 @@ function onRowClick(row: CellValue[], index: number) {
   opacity: 1;
 }
 
+/* 单元格内容：超出时单元格内横向滚动 */
+.table-cell-content {
+  max-width: 100%;
+  max-height: 120px;
+  overflow-x: auto;
+  overflow-y: auto;
+  padding: 0.5rem 0.75rem;
+  white-space: nowrap;
+  font-size: 0.95em;
+  line-height: 1.5;
+}
+
+.table-cell-content-header {
+  white-space: normal;
+  color: var(--color-muted);
+  font-weight: 500;
+}
+
 /* 自定义滚动条 */
 .custom-scrollbar::-webkit-scrollbar {
-  height: 6px;
-  width: 6px;
+  height: 4px;
+  width: 4px;
 }
 .custom-scrollbar::-webkit-scrollbar-track {
-  background: #F5F5F5;
-  border-radius: 3px;
+  background: transparent;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: #D1D5DB;
-  border-radius: 3px;
+  background: var(--color-border-strong);
+  border-radius: 4px;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #9CA3AF;
+  background: var(--color-subtle);
 }
 </style>
