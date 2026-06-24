@@ -11,11 +11,10 @@ import { ref, nextTick, watch, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import * as convApi from '@/api/conversations'
-import { getActiveStreaming, continueStream, setStreamResumePoint, clearStreamResumePoint } from '@/api/chat'
-import type { DisplayMessage, MessageAttachment, PendingImage, PendingDocument, StreamMessage } from '@/types'
+import { getActiveStreaming, continueStream, getStreamResumePoint, setStreamResumePoint, clearStreamResumePoint } from '@/api/chat'
+import type { StreamMessage } from '@/api/chat'
+import type { DisplayMessage, MessageAttachment, PendingImage, PendingDocument } from '@/types'
 
-// 进行中流式消息的轮询间隔：1.5s 平衡实时性与请求量
-const STREAMING_POLL_INTERVAL = 1500
 // 草稿节流间隔：500ms，避免高频写入 localStorage
 const DRAFT_SAVE_DEBOUNCE = 500
 const DRAFT_PREFIX = 'codesage_draft:'
@@ -181,40 +180,6 @@ function _stopStreamingPoll() {
   }
 }
 
-/**
- * 轮询进行中的流式消息（已废弃：优先使用 SSE 断点续传）。
- * 当某条流式消失（后端已落库并清理 Redis），触发 loadMessages 刷新历史获取完整内容。
- */
-function _startStreamingPoll(sessionId: string) {
-    _stopStreamingPoll()
-    streamingPollTimer = setTimeout(async () => {
-      try {
-        const res = await getActiveStreaming(sessionId)
-        const currentTokens = new Set(res.items.map(i => i.stream_token))
-        // 更新已存在占位的内容
-        for (const item of res.items) {
-          const target = messages.value.find(m => m.id === `streaming-${item.stream_token}`)
-          if (target) target.content = item.content
-        }
-        // 检测是否有流式结束：当前占位里有不在最新返回中的 token
-        const placeholders = messages.value.filter(_isStreamingPlaceholder)
-        const finished = placeholders.some(m => !currentTokens.has(m.id.replace('streaming-', '')))
-        if (finished || res.count === 0) {
-          // 有流式结束 → 移除占位 → 重新加载历史（含已落库的完整内容）
-          _clearStreamingPlaceholders()
-          await loadMessages(sessionId)
-          return // loadMessages 末尾会重新触发 _restoreActiveStreaming
-        }
-        await scrollToBottom()
-        _startStreamingPoll(sessionId)
-      } catch (err) {
-        console.debug('轮询流式消息失败', err)
-        // 出错时继续轮询，避免恢复流程卡死
-        _startStreamingPoll(sessionId)
-      }
-    }, STREAMING_POLL_INTERVAL)
-  }
-
   // ---- 输入草稿持久化（防刷新丢失输入）----
   let draftSaveTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -281,7 +246,7 @@ function _startStreamingPoll(sessionId: string) {
 
   onUnmounted(() => {
     window.removeEventListener('beforeunload', _handleBeforeUnload)
-    document.removeEventListener('visibilitychange', _handleVisibilityChange')
+    document.removeEventListener('visibilitychange', _handleVisibilityChange)
     _stopStreamingPoll()
     _stopContinueStream()
     const sid = currentSessionId()
